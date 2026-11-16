@@ -9,6 +9,8 @@ const base = process.env.BASE_PATH ?? '/'
 
 export default defineConfig({
   base,
+  // il codec WASM di jsquash va servito così com'è, non pre-bundlato
+  optimizeDeps: { exclude: ['@jsquash/webp'] },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   plugins: [
     react(),
@@ -36,6 +38,8 @@ export default defineConfig({
       workbox: {
         navigateFallback: `${base}index.html`,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // librerie pesanti caricate solo quando aggiungi un capo: niente precache
+        globIgnores: ['**/ort*', '**/transformers*', '**/webp*', '**/dist-*'],
       },
     }),
   ],
