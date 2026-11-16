@@ -10,11 +10,11 @@ import { hasTransparentBorder } from '@/lib/image/transparency'
 import { cropToSubject } from '@/lib/image/crop'
 import { dominantColor } from '@/lib/image/dominantColor'
 import { bgModelReady, removeBackground } from '@/lib/image/removeBackground'
-import { classifyGarment, composeName } from '@/lib/image/classify'
+import { classifyGarment, clipModelReady, composeName } from '@/lib/image/classify'
 import { encodeGarment } from '@/lib/image/encode'
 import { cn } from '@/lib/utils'
 import { useCreateGarment } from './api'
-import { GarmentForm } from './GarmentForm'
+import { GarmentForm, type RecognizeStatus } from './GarmentForm'
 import { isFormComplete, type FormValues } from './form'
 
 type QueueItem = { file: File; source: GarmentSource }
@@ -69,7 +69,7 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
   const [item, setItem] = useState<Item>(initialItem)
   const [form, setForm] = useState<FormValues>(EMPTY_FORM)
   const [suggestedColor, setSuggestedColor] = useState<string | null>(null)
-  const [recognizing, setRecognizing] = useState(false)
+  const [recognizing, setRecognizing] = useState<RecognizeStatus>(null)
   const [recognizeNote, setRecognizeNote] = useState<string | null>(null)
   const [view, setView] = useState<'prima' | 'dopo'>('dopo')
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -86,7 +86,7 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
     setItem(initialItem())
     setForm(EMPTY_FORM)
     setSuggestedColor(null)
-    setRecognizing(false)
+    setRecognizing(null)
     setRecognizeNote(null)
     setSaveError(null)
     setSaving(false)
@@ -99,7 +99,8 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
   }
 
   const recognize = useCallback(async (cut: HTMLCanvasElement, run: number) => {
-    setRecognizing(true)
+    const downloading = !clipModelReady()
+    setRecognizing({ downloading, progress: null })
     setRecognizeNote(null)
     const rgb = dominantColor(cut)
     const color = rgb ? nearestPaletteColor(rgb) : null
@@ -108,7 +109,9 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
       if (!touched.current) setForm((f) => ({ ...f, color: color.hex }))
     }
     try {
-      const res = await classifyGarment(cut)
+      const res = await classifyGarment(cut, (p) => {
+        if (downloading && run === runId.current) setRecognizing({ downloading, progress: p })
+      })
       if (run !== runId.current) return
       if (!touched.current) {
         setForm((f) => ({
@@ -123,7 +126,7 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
       console.error(e)
       if (run === runId.current) setRecognizeNote('Riconoscimento non riuscito: compila tu i campi.')
     } finally {
-      if (run === runId.current) setRecognizing(false)
+      if (run === runId.current) setRecognizing(null)
     }
   }, [])
 
