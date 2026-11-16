@@ -1,7 +1,9 @@
 import { createClient } from '@supabase/supabase-js'
 
-const url = import.meta.env.VITE_SUPABASE_URL
-const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+export const SUPABASE_URL: string = import.meta.env.VITE_SUPABASE_URL
+export const SUPABASE_KEY: string = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const url = SUPABASE_URL
+const key = SUPABASE_KEY
 
 if (!url || !key) {
   throw new Error('Mancano VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY')

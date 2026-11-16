@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Camera, Crop, Images, RotateCcw, Undo2 } from 'lucide-react'
+import { Camera, Crop, Globe, Images, RotateCcw, Undo2 } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { useCreateGarment } from './api'
 import { GarmentForm, type RecognizeStatus } from './GarmentForm'
 import { CropBox } from './CropBox'
+import { WebSearchPanel } from './WebSearchPanel'
 import { isFormComplete, type FormValues } from './form'
 
 type QueueItem = { file: File; source: GarmentSource }
@@ -82,6 +83,7 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
   const [view, setView] = useState<'prima' | 'dopo'>('dopo')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [web, setWeb] = useState(false)
   const touched = useRef(false) // l'utente ha modificato il form: non sovrascrivere
   const runId = useRef(0)
   const create = useCreateGarment()
@@ -98,6 +100,7 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
     setRecognizeNote(null)
     setSaveError(null)
     setSaving(false)
+    setWeb(false)
     touched.current = false
   }, [])
 
@@ -197,7 +200,7 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
     [recognize],
   )
 
-  const start = (files: FileList | null, source: GarmentSource) => {
+  const start = (files: FileList | File[] | null, source: GarmentSource) => {
     const list = Array.from(files ?? []).filter((f) => f.type.startsWith('image/') || f.type === '')
     if (list.length === 0) return
     const q = list.map((file) => ({ file, source }))
@@ -261,7 +264,7 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
   }
 
   const choosing = queue.length === 0
-  const title = choosing ? 'Aggiungi un capo' : queue.length > 1 ? `Capo ${index + 1} di ${queue.length}` : 'Nuovo capo'
+  const title = choosing ? (web ? 'Cerca su internet' : 'Aggiungi un capo') : queue.length > 1 ? `Capo ${index + 1} di ${queue.length}` : 'Nuovo capo'
 
   return (
     <BottomSheet
@@ -295,7 +298,11 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
       }
     >
       {choosing ? (
-        <SourcePicker onPick={start} />
+        web ? (
+          <WebSearchPanel onFile={(f) => start([f], 'web')} onBack={() => setWeb(false)} />
+        ) : (
+          <SourcePicker onPick={start} onWeb={() => setWeb(true)} />
+        )
       ) : (
         <div className="flex flex-col gap-6">
           <Preview
@@ -330,7 +337,13 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
   )
 }
 
-function SourcePicker({ onPick }: { onPick: (files: FileList | null, source: GarmentSource) => void }) {
+function SourcePicker({
+  onPick,
+  onWeb,
+}: {
+  onPick: (files: FileList | null, source: GarmentSource) => void
+  onWeb: () => void
+}) {
   const camera = useRef<HTMLInputElement>(null)
   const gallery = useRef<HTMLInputElement>(null)
   return (
@@ -342,6 +355,10 @@ function SourcePicker({ onPick }: { onPick: (files: FileList | null, source: Gar
       <Button variant="secondary" onClick={() => gallery.current?.click()}>
         <Images className="size-5" aria-hidden />
         Galleria / PNG pronto
+      </Button>
+      <Button variant="secondary" onClick={onWeb}>
+        <Globe className="size-5" aria-hidden />
+        Cerca online
       </Button>
       <p className="mt-2 text-caption text-fg-muted">
         Fotografa il capo steso o appeso, su uno sfondo il più possibile uniforme. Il ritaglio e il riconoscimento
