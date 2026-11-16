@@ -2,12 +2,23 @@ import type { Category } from '@/lib/garments'
 import { ctx2d, makeCanvas } from './canvas'
 
 /**
- * Riconoscimento zero-shot con CLIP nel browser (transformers.js, caricato in lazy).
+ * Riconoscimento zero-shot con MobileCLIP S0 nel browser (transformers.js, caricato in lazy).
+ * Primo avvio ~66 MB (visivo fp16 23 MB + testo q8 43 MB), poi tutto dalla cache del browser.
  * Gli embedding dei testi si calcolano una volta e restano in localStorage:
  * dalle volte successive serve solo il modello visivo.
  */
-const MODEL = 'Xenova/clip-vit-base-patch32'
-const CACHE_KEY = 'armadio.clip-text-v1'
+const MODEL = 'Xenova/mobileclip_s0'
+const CACHE_KEY = 'armadio.clip-text-v2'
+const READY_KEY = 'armadio.clip-ready'
+
+/** true se il modello di riconoscimento è già stato scaricato su questo dispositivo. */
+export function clipModelReady(): boolean {
+  try {
+    return localStorage.getItem(READY_KEY) === MODEL
+  } catch {
+    return false
+  }
+}
 
 type Noun = { label: string; gender: 'm' | 'f'; plural: boolean }
 type Prompt = { text: string; category: Category; noun: Noun }
@@ -32,7 +43,8 @@ const TYPE_PROMPTS: Prompt[] = [
   { text: 'a tailored blazer', category: 'giacche_cappotti', noun: n('Blazer', 'm') },
   { text: 'a puffer down jacket', category: 'giacche_cappotti', noun: n('Piumino', 'm') },
   { text: 'a denim jacket', category: 'giacche_cappotti', noun: n('Giacca di jeans', 'f') },
-  { text: 'a pair of jeans', category: 'pantaloni', noun: n('Jeans', 'm', true) },
+  { text: 'a pair of blue denim jeans', category: 'jeans', noun: n('Jeans', 'm', true) },
+  { text: 'a pair of black denim jeans', category: 'jeans', noun: n('Jeans', 'm', true) },
   { text: 'a pair of dress trousers', category: 'pantaloni', noun: n('Pantaloni eleganti', 'm', true) },
   { text: 'a pair of chino pants', category: 'pantaloni', noun: n('Chino', 'm', true) },
   { text: 'a pair of sweatpants', category: 'pantaloni', noun: n('Pantaloni della tuta', 'm', true) },
@@ -141,7 +153,8 @@ async function loadClip(onProgress?: ModelProgress): Promise<Clip> {
 
   const [processor, vision] = await Promise.all([
     tf.AutoProcessor.from_pretrained(MODEL, { progress_callback }),
-    tf.CLIPVisionModelWithProjection.from_pretrained(MODEL, opts),
+    // visivo fp16 (23 MB): la versione q8 di MobileCLIP dà risultati sbagliati
+    tf.CLIPVisionModelWithProjection.from_pretrained(MODEL, { ...opts, dtype: 'fp16' }),
   ])
 
   let textEmbeds = readCache()
@@ -150,7 +163,8 @@ async function loadClip(onProgress?: ModelProgress): Promise<Clip> {
       tf.AutoTokenizer.from_pretrained(MODEL, { progress_callback }),
       tf.CLIPTextModelWithProjection.from_pretrained(MODEL, opts),
     ])
-    const inputs = tokenizer(ALL_TEXTS, { padding: true, truncation: true })
+    // MobileCLIP richiede lunghezza fissa (77 token)
+    const inputs = tokenizer(ALL_TEXTS, { padding: 'max_length', truncation: true })
     const { text_embeds } = (await textModel(inputs)) as { text_embeds: { data: Float32Array; dims: number[] } }
     const dim = text_embeds.dims[1]
     textEmbeds = ALL_TEXTS.map((_, i) => normalize(text_embeds.data.slice(i * dim, (i + 1) * dim)))
@@ -158,6 +172,11 @@ async function loadClip(onProgress?: ModelProgress): Promise<Clip> {
     await textModel.dispose()
   }
 
+  try {
+    localStorage.setItem(READY_KEY, MODEL)
+  } catch {
+    /* storage non disponibile */
+  }
   return {
     processor: processor as unknown as Clip['processor'],
     vision: vision as unknown as Clip['vision'],
@@ -180,12 +199,14 @@ export async function classifyGarment(src: HTMLCanvasElement, onProgress?: Model
   })
   const clip = await clipPromise
 
-  // il capo scontornato va su fondo bianco, come una foto da catalogo
-  const flat = makeCanvas(src.width, src.height)
+  // capo centrato in un quadrato bianco, come una foto da catalogo: il preprocessore
+  // fa un ritaglio centrale quadrato e altrimenti taglierebbe colletto o scarpe
+  const side = Math.max(src.width, src.height)
+  const flat = makeCanvas(side, side)
   const ctx = ctx2d(flat)
   ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, flat.width, flat.height)
-  ctx.drawImage(src, 0, 0)
+  ctx.fillRect(0, 0, side, side)
+  ctx.drawImage(src, (side - src.width) / 2, (side - src.height) / 2)
 
   const image = await clip.RawImage.read(flat)
   const inputs = await clip.processor(image)
