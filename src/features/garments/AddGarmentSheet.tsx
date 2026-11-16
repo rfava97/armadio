@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Camera, Images, Loader2, RotateCcw, Undo2 } from 'lucide-react'
+import { Camera, Crop, Images, RotateCcw, Undo2 } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
+import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/toast'
 import type { GarmentSource } from '@/lib/garments'
 import { nearestPaletteColor, paletteByHex } from '@/lib/colors'
 import { canvasToBlob, drawScaled, loadBitmap } from '@/lib/image/canvas'
 import { hasTransparentBorder } from '@/lib/image/transparency'
-import { cropToSubject } from '@/lib/image/crop'
+import { applyCrop, cropToSubject, DEFAULT_CROP, type CropRect } from '@/lib/image/crop'
 import { dominantColor } from '@/lib/image/dominantColor'
 import { bgModelReady, removeBackground } from '@/lib/image/removeBackground'
 import { classifyGarment, clipModelReady, composeName } from '@/lib/image/classify'
@@ -15,12 +16,17 @@ import { encodeGarment } from '@/lib/image/encode'
 import { cn } from '@/lib/utils'
 import { useCreateGarment } from './api'
 import { GarmentForm, type RecognizeStatus } from './GarmentForm'
+import { CropBox } from './CropBox'
 import { isFormComplete, type FormValues } from './form'
 
 type QueueItem = { file: File; source: GarmentSource }
 
 type Item = {
-  phase: 'loading' | 'removing' | 'review'
+  phase: 'loading' | 'crop' | 'removing' | 'review'
+  /** foto intera (ridotta a 1500px), prima del ritaglio manuale */
+  photo: HTMLCanvasElement | null
+  crop: CropRect
+  /** foto ritagliata a mano: input della scontornatura e "Usa originale" */
   original: HTMLCanvasElement | null
   cutout: HTMLCanvasElement | null
   alreadyTransparent: boolean
@@ -33,6 +39,8 @@ type Item = {
 const EMPTY_FORM: FormValues = { name: '', category: null, color: null, tags: [] }
 const initialItem = (): Item => ({
   phase: 'loading',
+  photo: null,
+  crop: DEFAULT_CROP,
   original: null,
   cutout: null,
   alreadyTransparent: false,
@@ -179,14 +187,14 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
           recognize(cut, run)
           return
         }
-        setItem((it) => ({ ...it, original }))
-        await runRemoval(original, run)
+        // la foto scattata si può ritagliare a mano prima della scontornatura
+        setItem({ ...initialItem(), phase: 'crop', photo: original })
       } catch (e) {
         console.error(e)
         if (run === runId.current) setItem({ ...initialItem(), phase: 'review', error: 'Immagine non leggibile.' })
       }
     },
-    [recognize, runRemoval],
+    [recognize],
   )
 
   const start = (files: FileList | null, source: GarmentSource) => {
@@ -199,6 +207,20 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
   }
 
   const selected = item.useOriginal ? item.original : item.cutout
+
+  const confirmCrop = (rect: CropRect | null) => {
+    if (!item.photo) return
+    const run = ++runId.current
+    const cropped = rect ? applyCrop(item.photo, rect) : item.photo
+    setItem((it) => ({ ...it, original: cropped, cutout: null, crop: rect ?? it.crop }))
+    runRemoval(cropped, run)
+  }
+
+  const recrop = () => {
+    runId.current++ // annulla riconoscimento in corso
+    setRecognizing(null)
+    setItem((it) => ({ ...it, phase: 'crop' }))
+  }
 
   const save = async () => {
     if (!selected || !isFormComplete(form)) return
@@ -215,13 +237,15 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
         thumb,
         source: queue[index].source,
       })
-      toast("Aggiunto all'armadio")
       const next = index + 1
       if (next < queue.length) {
+        toast("Aggiunto all'armadio")
         setIndex(next)
         processItem(queue[next])
       } else {
         close()
+        // il toast compare a pannello chiuso, così non si sovrappone al pulsante che scende
+        window.setTimeout(() => toast("Aggiunto all'armadio"), 260)
       }
     } catch (e) {
       console.error(e)
@@ -240,10 +264,20 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
       onClose={close}
       title={title}
       footer={
-        !choosing && item.phase === 'review' && selected ? (
+        !choosing && item.phase === 'crop' ? (
+          <div className="flex flex-col gap-2">
+            <Button onClick={() => confirmCrop(item.crop)}>
+              <Crop className="size-5" aria-hidden />
+              Ritaglia e continua
+            </Button>
+            <Button variant="ghost" size="md" onClick={() => confirmCrop(null)}>
+              Usa tutta la foto
+            </Button>
+          </div>
+        ) : !choosing && item.phase === 'review' && selected ? (
           <div className="flex flex-col gap-2">
             <Button disabled={!isFormComplete(form) || saving} onClick={save}>
-              {saving && <Loader2 className="size-5 animate-spin" aria-hidden />}
+              {saving && <Spinner />}
               {saving ? 'Salvataggio…' : "Aggiungi all'armadio"}
             </Button>
             {saveError && (
@@ -268,6 +302,8 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
               setView(item.useOriginal ? 'dopo' : 'prima')
             }}
             onRetry={() => item.original && runRemoval(item.original, ++runId.current)}
+            onCrop={(c) => setItem((it) => ({ ...it, crop: c }))}
+            onRecrop={item.photo ? recrop : undefined}
           />
           {item.phase === 'review' && selected && (
             <>
@@ -338,15 +374,36 @@ function Preview({
   onView,
   onUseOriginal,
   onRetry,
+  onCrop,
+  onRecrop,
 }: {
   item: Item
   view: 'prima' | 'dopo'
   onView: (v: 'prima' | 'dopo') => void
   onUseOriginal: () => void
   onRetry: () => void
+  onCrop: (c: CropRect) => void
+  onRecrop?: () => void
 }) {
+  const photoUrl = useCanvasUrl(item.photo)
   const originalUrl = useCanvasUrl(item.original)
   const cutoutUrl = useCanvasUrl(item.cutout)
+
+  if (item.phase === 'crop') {
+    return (
+      <div className="flex flex-col gap-3">
+        {photoUrl && item.photo ? (
+          <CropBox src={photoUrl} aspect={item.photo.width / item.photo.height} rect={item.crop} onChange={onCrop} />
+        ) : (
+          <div className="aspect-[4/5] w-full animate-pulse rounded-card bg-surface-muted" />
+        )}
+        <p className="text-caption text-fg-muted">
+          Inquadra solo il capo: trascina il riquadro o i suoi angoli. Meno sfondo resta, migliore è il ritaglio.
+        </p>
+      </div>
+    )
+  }
+
   const showCut = view === 'dopo' && cutoutUrl
   const url = showCut ? cutoutUrl : originalUrl
 
@@ -356,13 +413,13 @@ function Preview({
         {url && (
           <img
             src={url}
-            alt={view === 'dopo' ? 'Capo ritagliato' : 'Foto originale'}
+            alt={showCut ? 'Capo ritagliato' : 'Foto originale'}
             className={cn('h-full w-full object-contain', item.phase === 'removing' && 'opacity-40')}
           />
         )}
         {item.phase !== 'review' && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-6 text-center" role="status">
-            <Loader2 className="size-8 animate-spin text-accent" aria-hidden />
+            <Spinner className="size-8 text-accent" />
             <p className="text-body font-medium">
               {item.phase === 'loading' ? 'Apro la foto…' : 'Sto ritagliando il capo…'}
             </p>
@@ -407,7 +464,13 @@ function Preview({
               ))}
             </div>
           )}
-          <div className="ml-auto flex gap-1">
+          <div className="ml-auto flex flex-wrap justify-end gap-1">
+            {onRecrop && (
+              <Button variant="ghost" size="md" className="px-3" onClick={onRecrop}>
+                <Crop className="size-4" aria-hidden />
+                Ritaglia
+              </Button>
+            )}
             {item.cutout && (
               <Button variant="ghost" size="md" className="px-3" onClick={onUseOriginal} aria-pressed={item.useOriginal}>
                 <Undo2 className="size-4" aria-hidden />
