@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { Camera, Crop, Globe, Images, RotateCcw, Undo2 } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
 import { Spinner } from '@/components/Spinner'
@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/toast'
 import type { GarmentSource } from '@/lib/garments'
 import { nearestPaletteColor, paletteByHex } from '@/lib/colors'
-import { canvasToBlob, drawScaled, loadBitmap } from '@/lib/image/canvas'
+import { drawScaled, loadBitmap } from '@/lib/image/canvas'
 import { hasTransparentBorder } from '@/lib/image/transparency'
 import { applyCrop, cropToSubject, DEFAULT_CROP, type CropRect } from '@/lib/image/crop'
 import { dominantColor } from '@/lib/image/dominantColor'
@@ -14,6 +14,7 @@ import { bgModelReady, removeBackground } from '@/lib/image/removeBackground'
 import { classifyGarment, clipModelReady, composeName } from '@/lib/image/classify'
 import { encodeGarment } from '@/lib/image/encode'
 import { cn } from '@/lib/utils'
+import { useCanvasUrl } from '@/lib/image/useCanvasUrl'
 import { useCreateGarment } from './api'
 import { GarmentForm, type RecognizeStatus } from './GarmentForm'
 import { CropBox } from './CropBox'
@@ -50,27 +51,6 @@ const initialItem = (): Item => ({
   firstDownload: false,
   error: null,
 })
-
-/** URL oggetto per mostrare un canvas in un <img>. */
-function useCanvasUrl(canvas: HTMLCanvasElement | null) {
-  const [url, setUrl] = useState<string | null>(null)
-  useEffect(() => {
-    if (!canvas) return
-    let revoked = false
-    let u: string | null = null
-    canvasToBlob(canvas, 'image/png').then((b) => {
-      if (revoked) return
-      u = URL.createObjectURL(b)
-      setUrl(u)
-    })
-    return () => {
-      revoked = true
-      if (u) URL.revokeObjectURL(u)
-      setUrl(null)
-    }
-  }, [canvas])
-  return url
-}
 
 export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [queue, setQueue] = useState<QueueItem[]>([])

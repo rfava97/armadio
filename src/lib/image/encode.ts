@@ -41,3 +41,14 @@ export async function encodeGarment(src: HTMLCanvasElement): Promise<EncodedGarm
   const thumb = await toWebp(drawScaled(src, THUMB_SIDE), 0.8)
   return { image, thumb }
 }
+
+/** Foto del corpo: lato lungo 1400px (serve precisione per la calibrazione), WebP con trasparenza. */
+export async function encodeBodyPhoto(src: HTMLCanvasElement): Promise<Blob> {
+  const main = drawScaled(src, 1400)
+  let image = await toWebp(main, 0.85)
+  for (const q of [0.75, 0.65]) {
+    if (image.size <= 400 * 1024) break
+    image = await toWebp(main, q)
+  }
+  return image
+}
