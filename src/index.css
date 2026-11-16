@@ -30,7 +30,7 @@
   --color-mannequin: var(--mannequin);
   --color-mannequin-shadow: var(--mannequin-shadow);
 
-  --font-sans: "Inter", -apple-system, system-ui, sans-serif;
+  --font-sans: "Inter Variable", "Inter", -apple-system, system-ui, sans-serif;
 
   --radius-card: 20px;
   --radius-sheet: 28px;
