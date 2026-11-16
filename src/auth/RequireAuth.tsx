@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { Loader2 } from 'lucide-react'
+import { Spinner } from '@/components/Spinner'
 import { useAuth } from './context'
 
 export function RequireAuth() {
@@ -9,7 +9,7 @@ export function RequireAuth() {
   if (loading) {
     return (
       <div className="flex min-h-dvh items-center justify-center" aria-label="Caricamento">
-        <Loader2 className="size-6 animate-spin text-fg-muted" />
+        <Spinner className="size-6 text-fg-muted" />
       </div>
     )
   }

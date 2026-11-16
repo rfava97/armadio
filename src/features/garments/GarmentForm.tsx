@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react'
-import { Loader2, Plus } from 'lucide-react'
+import { Plus } from 'lucide-react'
+import { Spinner } from '@/components/Spinner'
 import { Input } from '@/components/ui/input'
 import { Chip } from '@/components/Chip'
 import { CATEGORIES, CATEGORY_LABEL } from '@/lib/garments'
@@ -48,7 +49,7 @@ export function GarmentForm({ value, onChange, suggestedColor, recognizing }: Pr
     <div className="flex flex-col gap-6">
       {recognizing && (
         <div className="flex items-start gap-2 rounded-input bg-surface-muted p-3 text-caption" role="status">
-          <Loader2 className="mt-0.5 size-4 shrink-0 animate-spin text-accent" aria-hidden />
+          <Spinner className="mt-0.5 size-4 text-accent" />
           <span>
             {recognizing.downloading && recognizing.progress !== null && recognizing.progress >= 0.99
               ? 'Preparo il riconoscimento, solo la prima volta…'

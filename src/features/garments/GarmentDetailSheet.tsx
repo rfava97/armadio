@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Loader2, Pencil, Shirt, Trash2 } from 'lucide-react'
+import { Pencil, Shirt, Trash2 } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
+import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/toast'
 import { CATEGORY_SINGULAR } from '@/lib/garments'
@@ -114,14 +115,14 @@ function Footer({ garment, mode, values, setMode, onClose }: State & { onClose: 
               { id: garment.id, ...values, category: values.category! },
               {
                 onSuccess: () => {
-                  toast('Modifiche salvate')
                   close()
+                  window.setTimeout(() => toast('Modifiche salvate'), 260)
                 },
               },
             )
           }
         >
-          {updateMut.isPending && <Loader2 className="size-5 animate-spin" aria-hidden />}
+          {updateMut.isPending && <Spinner />}
           Salva modifiche
         </Button>
         <Button variant="ghost" size="md" onClick={() => setMode('view')}>
@@ -141,13 +142,13 @@ function Footer({ garment, mode, values, setMode, onClose }: State & { onClose: 
           onClick={() =>
             deleteMut.mutate(garment, {
               onSuccess: () => {
-                toast('Capo eliminato')
                 close()
+                window.setTimeout(() => toast('Capo eliminato'), 260)
               },
             })
           }
         >
-          {deleteMut.isPending ? <Loader2 className="size-5 animate-spin" aria-hidden /> : <Trash2 className="size-5" aria-hidden />}
+          {deleteMut.isPending ? <Spinner /> : <Trash2 className="size-5" aria-hidden />}
           Elimina definitivamente
         </Button>
         <Button variant="ghost" size="md" onClick={() => setMode('view')}>
