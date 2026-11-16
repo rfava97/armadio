@@ -6,6 +6,7 @@ import { AuthProvider } from '@/auth/AuthProvider'
 import { ToastProvider } from '@/components/ToastProvider'
 import App from './App'
 import '@fontsource-variable/inter'
+import '@fontsource-variable/cormorant-garamond'
 import './index.css'
 
 const queryClient = new QueryClient({

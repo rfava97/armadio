@@ -2,8 +2,8 @@
 from pathlib import Path
 from PIL import Image, ImageDraw
 
-ACCENT = (31, 91, 255, 255)
-WHITE = (255, 255, 255, 255)
+ACCENT = (100, 30, 50, 255)  # bordeaux #641E32
+WHITE = (232, 216, 197, 255)  # champagne #E8D8C5
 OUT = Path(__file__).resolve().parent.parent / "public"
 S = 2048  # disegno ad alta risoluzione, poi ridimensiono
 

@@ -9,6 +9,7 @@ import { CategoryTabs, type CategoryFilter } from '@/features/garments/CategoryT
 import { GarmentCard } from '@/features/garments/GarmentCard'
 import { GarmentDetailSheet } from '@/features/garments/GarmentDetailSheet'
 import { AddGarmentSheet } from '@/features/garments/AddGarmentSheet'
+import { HangerRail } from '@/components/HangerRail'
 
 const norm = (s: string) =>
   s
@@ -41,7 +42,10 @@ export default function Armadio() {
   return (
     <main>
       <header className="flex items-center justify-between gap-3">
-        <h1 className="text-screen-title">Il tuo armadio</h1>
+        <div>
+          <p className="text-overline font-semibold uppercase text-accent">Atelier personale</p>
+          <h1 className="font-display text-screen-title">Il tuo armadio</h1>
+        </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -50,7 +54,7 @@ export default function Armadio() {
               setSearching((s) => !s)
               setQuery('')
             }}
-            className="flex size-11 items-center justify-center rounded-full bg-surface text-fg shadow-card"
+            className="flex size-11 items-center justify-center rounded-full border border-border bg-surface text-fg"
           >
             {searching ? <X className="size-5" /> : <Search className="size-5" />}
           </button>
@@ -80,13 +84,14 @@ export default function Armadio() {
       {!empty && (
         <div className="mt-4">
           <CategoryTabs value={category} onChange={setCategory} />
+          <HangerRail className="mt-3" />
         </div>
       )}
 
       {isLoading && (
         <div className="mt-4 grid grid-cols-2 gap-3" aria-label="Caricamento">
           {Array.from({ length: 4 }, (_, i) => (
-            <div key={i} className="aspect-[4/5] animate-pulse rounded-card bg-surface-muted" />
+            <div key={i} className="aspect-[4/5] animate-pulse rounded-card bg-garment-bg" />
           ))}
         </div>
       )}
@@ -102,7 +107,7 @@ export default function Armadio() {
 
       {empty && (
         <div className="mt-16 flex flex-col items-center gap-5 text-center">
-          <div className="flex size-24 items-center justify-center rounded-full bg-surface-muted">
+          <div className="flex size-24 items-center justify-center rounded-full bg-garment-bg">
             <Shirt className="size-10 text-fg-muted" aria-hidden />
           </div>
           <p className="max-w-64 text-body text-fg-muted">Il tuo armadio è vuoto. Inizia fotografando un capo.</p>
@@ -122,7 +127,7 @@ export default function Armadio() {
       )}
 
       {filtered.length > 0 && (
-        <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="mt-4 grid grid-cols-2 gap-x-3 gap-y-5">
           {filtered.map((g) => (
             <GarmentCard key={g.id} garment={g} onOpen={() => setOpenId(g.id)} />
           ))}

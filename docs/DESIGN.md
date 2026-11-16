@@ -1,47 +1,58 @@
 # Armadio — Design system
 
-Direzione: **"atelier pulito"**. Bianco caldo, nero quasi puro, un solo accento blu elettrico (come nel riferimento), molto spazio, i capi sono le uniche cose colorate sullo schermo. Sensazione iOS nativa, niente decorazioni.
+Direzione: **"atelier"**. Avorio caldo, testi blu navy, un solo accento bordeaux, fondi champagne per i capi. Titoli in serif sartoriale, piccoli dettagli da armadio (asta appendiabiti sopra la griglia, sopratitoli in maiuscoletto spaziato). I capi restano le cose più colorate sullo schermo. Palette scelta da Riccardo: **Bordeaux `#641E32`, Champagne `#E8D8C5`, Blu navy `#0B1F44`**.
 
 ## Colori (token semantici → CSS variables)
 | Token | Valore | Uso |
 |---|---|---|
-| `--bg` | `#F7F7F5` | sfondo app |
-| `--surface` | `#FFFFFF` | card, sheet |
-| `--surface-muted` | `#EFEFEC` | fondo immagini capi, input |
-| `--fg` | `#111111` | testo principale |
-| `--fg-muted` | `#6B6B6B` | categorie, hint (contrasto ≥ 4.5:1 su `--bg`) |
-| `--border` | `#E6E6E2` | divisori, card |
-| `--accent` | `#1F5BFF` | CTA, tab attiva, selezioni, strato attivo |
-| `--on-accent` | `#FFFFFF` | testo su accent |
-| `--like` | `#F2394B` | cuore preferiti |
-| `--danger` | `#D92D20` | elimina |
-| `--mannequin` | `#E9E9E6` con ombre `#D5D5D0` | manichino SVG |
+| `--bg` | `#FAF6F0` | sfondo app (avorio) |
+| `--surface` | `#FFFDF9` | card, sheet, bottom bar |
+| `--surface-muted` | `#F3EADF` | input, chip non selezionate |
+| `--garment-bg` | `#EFE3D4` | fondo immagini capi e avatar (champagne chiaro) |
+| `--fg` | `#0B1F44` | testo principale (navy) |
+| `--fg-muted` | `#5B6275` | categorie, hint (contrasto ≥ 4.5:1 su `--bg`) |
+| `--border` | `#E8D8C5` | divisori, bordi card (champagne) |
+| `--accent` | `#641E32` | CTA, tab attiva, selezioni, sopratitoli (bordeaux) |
+| `--accent-soft` | `#F1E1E2` | fondi tenui legati all'accento |
+| `--on-accent` | `#FAF6F0` | testo su accent e su navy |
+| `--navy` | `#0B1F44` | voce attiva della bottom bar, etichette dei marcatori |
+| `--champagne` | `#E8D8C5` | asta appendiabiti, binario degli slider |
+| `--like` | `#8E2440` | cuore preferiti |
+| `--danger` | `#A8231C` | elimina, errori |
+| `--overlay` / `--toast` | navy 55% / 92% | fuori dal ritaglio, toast |
+| `--mannequin` | `#EDE2D4` con ombre `#D6C3AB` | manichino SVG |
 
 Dark mode: fase successiva (non in v1), ma usa solo token, mai hex nei componenti.
 
 ## Tipografia
-- Font: **Inter** (variable), fallback `-apple-system, system-ui`.
-- Titoli schermata: 30/34, weight 800, tracking −0.02em ("Il tuo armadio", "Crea il tuo outfit").
-- Titoli sheet: 24/28, 800.
+- Titoli: **Cormorant Garamond** (variable, `font-display`), con numeri allineati (`lining-nums`).
+- Testo: **Inter** (variable), fallback `-apple-system, system-ui`.
+- Titoli schermata: 36/40, 600, Cormorant, tracking −0.01em. Sopra, sopratitolo "ATELIER PERSONALE".
+- Titoli sheet: 30/34, 600, Cormorant.
+- Sopratitoli e intestazioni di sezione (`text-overline`): 12/16, 600, maiuscolo, tracking 0.12em, `--accent`.
 - Label campi: 13/16, 500, `--fg-muted`.
-- Corpo: 16/24, 400. Nome capo nelle card: 15/20, 500. Categoria: 13/18, 400 muted.
+- Corpo: 16/24, 400. Nome capo nelle card: Cormorant 19/24, 600. Categoria: overline 12px muted.
 - Minimo assoluto 12px.
+- Le dimensioni personalizzate vanno registrate in `cn()` (`src/lib/utils.ts`), altrimenti tailwind-merge le confonde con i colori.
 
 ## Spaziatura e forme
 - Scala: 4, 8, 12, 16, 20, 24, 32, 48.
 - Margine laterale schermata: 20px. Gap griglia: 12px.
 - Raggi: card 20px, sheet 28px (solo angoli superiori), chip e pill 999px, input 14px.
-- Ombre: quasi assenti. Card: `0 1px 2px rgba(0,0,0,.04)`. Bottom bar e FAB: `0 8px 24px rgba(0,0,0,.08)`.
+- Ombre: quasi assenti, tinte di navy. Card: `0 1px 2px rgba(11,31,68,.05)`. Bottom bar e FAB: `0 10px 30px rgba(11,31,68,.12)`.
 
 ## Componenti chiave
-- **Bottom bar**: pill flottante bianca con 3 voci (icona + label); voce attiva con capsula `--surface-muted` dietro e icona piena. Rispetta safe area in basso.
+- **Bottom bar**: pill flottante `--surface` con bordo champagne, 3 voci (icona + label); voce attiva con capsula `--navy` e testo avorio, icona piena. Rispetta safe area in basso.
 - **Tab categorie**: testo 16/500, attiva in `--accent` con sottolineatura 2px che scorre animata tra le tab.
-- **Card capo**: immagine 4:5 su `--surface-muted`, `object-fit: contain`, padding 12px; sotto nome + categoria.
+- **Asta appendiabiti**: sotto le tab categorie, barra sottile champagne con i due supporti alle estremità.
+- **Card capo**: immagine 4:5 su `--garment-bg`, `object-fit: contain`, margine 12px, dimensione fissa; sotto nome (serif) + categoria (overline).
 - **Chip**: altezza 36px, padding 16px; non selezionata `--surface-muted` + testo `--fg`; selezionata `--accent` + testo bianco.
 - **CTA primaria**: altezza 56px, piena larghezza, pill, `--accent`.
 - **CTA secondaria**: stessa forma, `--surface` con bordo `--border`, icona accent ("Cerca su Google").
 - **Bottom sheet**: maniglia 36×5px in alto, titolo grande, contenuto scrollabile, CTA fissa in basso.
-- **Toast**: pill scura `rgba(17,17,17,.85)`, testo bianco 15/500, centrato sopra la bottom bar, 2 s.
+- **Toast**: pill `--toast` (navy), testo avorio 15/500, centrato sopra la bottom bar, 2 s.
+- **Slider misure**: binario champagne 4px, parte piena bordeaux, cursore avorio 28px con bordo bordeaux.
+- **Manichino**: SVG parametrico in `--mannequin` con sfumatura laterale (volume), su fondo `--garment-bg`.
 - **Indicatori strati**: label piccola muted ("Strato 1") + nome capo 18/500; strato attivo con sottolineatura accent 2px; X accent per rimuovere.
 
 ## Movimento

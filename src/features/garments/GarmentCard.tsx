@@ -14,7 +14,7 @@ export function GarmentCard({ garment, onOpen }: { garment: GarmentWithThumb; on
   return (
     <button type="button" onClick={onOpen} className="flex min-w-0 flex-col text-left">
       {/* il riquadro ha sempre la stessa forma: l'immagine è posizionata in assoluto e non può allargarlo */}
-      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-card bg-surface-muted shadow-card">
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-card bg-garment-bg shadow-card">
         {garment.thumbUrl ? (
           <img
             src={garment.thumbUrl}
@@ -31,8 +31,8 @@ export function GarmentCard({ garment, onOpen }: { garment: GarmentWithThumb; on
           <Shirt className="absolute inset-0 m-auto size-10 text-fg-muted" aria-hidden />
         )}
       </div>
-      <span className="mt-2 truncate text-card font-medium">{garment.name}</span>
-      <span className="truncate text-caption text-fg-muted">{CATEGORY_SINGULAR[garment.category]}</span>
+      <span className="mt-2 truncate font-display text-[19px] font-semibold leading-6">{garment.name}</span>
+      <span className="truncate text-overline font-medium uppercase text-fg-muted">{CATEGORY_SINGULAR[garment.category]}</span>
     </button>
   )
 }

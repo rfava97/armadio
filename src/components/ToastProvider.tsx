@@ -27,7 +27,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="rounded-full bg-[rgba(17,17,17,.85)] px-5 py-3 text-card font-medium text-on-accent"
+              className="rounded-full bg-toast px-5 py-3 text-card font-medium text-on-accent"
             >
               {msg.text}
             </motion.div>

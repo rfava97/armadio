@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { ArrowLeft, KeyRound, Mail, UserPlus } from 'lucide-react'
+import { HangerIcon } from '@/components/HangerIcon'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/auth/context'
 import { Button } from '@/components/ui/button'
@@ -108,7 +109,9 @@ export default function Login() {
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-gutter pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
-      <h1 className="text-screen-title">Armadio</h1>
+      <HangerIcon className="size-10 text-accent" aria-hidden />
+      <p className="mt-4 text-overline font-semibold uppercase text-accent">Atelier personale</p>
+      <h1 className="font-display text-[48px] leading-[52px] font-semibold">Armadio</h1>
 
       {step === 'password' && (
         <form onSubmit={signInWithPassword} className="mt-8 flex flex-col gap-4">

@@ -2,18 +2,25 @@
 
 /* Token del design system (docs/DESIGN.md). Nei componenti usa solo questi, mai hex. */
 :root {
-  --bg: #f7f7f5;
-  --surface: #ffffff;
-  --surface-muted: #efefec;
-  --fg: #111111;
-  --fg-muted: #6b6b6b;
-  --border: #e6e6e2;
-  --accent: #1f5bff;
-  --on-accent: #ffffff;
-  --like: #f2394b;
-  --danger: #d92d20;
-  --mannequin: #e9e9e6;
-  --mannequin-shadow: #d5d5d0;
+  /* Palette "atelier": bordeaux #641E32, champagne #E8D8C5, blu navy #0B1F44 */
+  --bg: #faf6f0;
+  --surface: #fffdf9;
+  --surface-muted: #f3eadf;
+  --garment-bg: #efe3d4;
+  --fg: #0b1f44;
+  --fg-muted: #5b6275;
+  --border: #e8d8c5;
+  --accent: #641e32;
+  --accent-soft: #f1e1e2;
+  --on-accent: #faf6f0;
+  --navy: #0b1f44;
+  --champagne: #e8d8c5;
+  --like: #8e2440;
+  --danger: #a8231c;
+  --overlay: rgba(11, 31, 68, 0.55);
+  --toast: rgba(11, 31, 68, 0.92);
+  --mannequin: #ede2d4;
+  --mannequin-shadow: #d6c3ab;
 }
 
 @theme inline {
@@ -29,23 +36,34 @@
   --color-danger: var(--danger);
   --color-mannequin: var(--mannequin);
   --color-mannequin-shadow: var(--mannequin-shadow);
+  --color-garment-bg: var(--garment-bg);
+  --color-accent-soft: var(--accent-soft);
+  --color-navy: var(--navy);
+  --color-champagne: var(--champagne);
+  --color-overlay: var(--overlay);
+  --color-toast: var(--toast);
 
   --font-sans: "Inter Variable", "Inter", -apple-system, system-ui, sans-serif;
+  --font-display: "Cormorant Garamond Variable", "Cormorant Garamond", Georgia, serif;
 
   --radius-card: 20px;
   --radius-sheet: 28px;
   --radius-input: 14px;
 
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 1px 2px rgba(11, 31, 68, 0.05);
+  --shadow-float: 0 10px 30px rgba(11, 31, 68, 0.12);
 
-  --text-screen-title: 30px;
-  --text-screen-title--line-height: 34px;
-  --text-screen-title--letter-spacing: -0.02em;
-  --text-screen-title--font-weight: 800;
-  --text-sheet-title: 24px;
-  --text-sheet-title--line-height: 28px;
-  --text-sheet-title--font-weight: 800;
+  /* titoli in Cormorant Garamond (font-display): più grandi perché il serif ha occhio piccolo */
+  --text-screen-title: 36px;
+  --text-screen-title--line-height: 40px;
+  --text-screen-title--letter-spacing: -0.01em;
+  --text-screen-title--font-weight: 600;
+  --text-sheet-title: 30px;
+  --text-sheet-title--line-height: 34px;
+  --text-sheet-title--font-weight: 600;
+  --text-overline: 12px;
+  --text-overline--line-height: 16px;
+  --text-overline--letter-spacing: 0.12em;
   --text-label: 13px;
   --text-label--line-height: 16px;
   --text-body: 16px;
@@ -78,4 +96,51 @@
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
   }
+}
+
+/* Slider delle misure: binario champagne, parte piena bordeaux (--p = percentuale), cursore avorio */
+.range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  touch-action: pan-y;
+}
+.range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--p), var(--champagne) var(--p));
+}
+.range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--p), var(--champagne) var(--p));
+}
+.range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  margin-top: -12px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-float);
+}
+.range::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+}
+.range:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 999px;
+}
+
+/* Cormorant usa di default numeri "all'antica" (di altezze diverse): nei titoli servono allineati */
+.font-display {
+  font-variant-numeric: lining-nums;
 }

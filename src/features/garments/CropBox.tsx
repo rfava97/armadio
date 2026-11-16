@@ -99,7 +99,7 @@ export function CropBox({
             top: pct(rect.y),
             width: pct(rect.w),
             height: pct(rect.h),
-            boxShadow: '0 0 0 9999px rgba(17,17,17,.5)',
+            boxShadow: '0 0 0 9999px var(--overlay)',
           }}
         />
         <div

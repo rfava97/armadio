@@ -65,7 +65,7 @@ export function BottomSheet({ open, onClose, title, children, footer }: Props) {
                 <span className="h-[5px] w-9 rounded-full bg-border" aria-hidden />
               </div>
               <div className="flex items-start justify-between gap-4 px-gutter pt-2 pb-4">
-              <h2 id={titleId} className="text-sheet-title">
+              <h2 id={titleId} className="font-display text-sheet-title">
                 {title}
               </h2>
               <button
