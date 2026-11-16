@@ -3,7 +3,7 @@
 
 create type garment_category as enum (
   'maglie', 'camicie', 'canotte', 'felpe_maglioni', 'giacche_cappotti',
-  'pantaloni', 'scarpe', 'accessori'
+  'pantaloni', 'jeans', 'scarpe', 'accessori'
 );
 
 create type body_zone as enum ('busto', 'gambe', 'piedi', 'accessorio');

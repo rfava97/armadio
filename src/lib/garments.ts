@@ -5,6 +5,7 @@ export const CATEGORIES = [
   'felpe_maglioni',
   'giacche_cappotti',
   'pantaloni',
+  'jeans',
   'scarpe',
   'accessori',
 ] as const
@@ -20,6 +21,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   felpe_maglioni: 'Felpe e Maglioni',
   giacche_cappotti: 'Giacche e Cappotti',
   pantaloni: 'Pantaloni',
+  jeans: 'Jeans',
   scarpe: 'Scarpe',
   accessori: 'Accessori',
 }
@@ -32,6 +34,7 @@ export const CATEGORY_SINGULAR: Record<Category, string> = {
   felpe_maglioni: 'Felpa / Maglione',
   giacche_cappotti: 'Giacca / Cappotto',
   pantaloni: 'Pantaloni',
+  jeans: 'Jeans',
   scarpe: 'Scarpe',
   accessori: 'Accessorio',
 }
@@ -43,6 +46,7 @@ export const CATEGORY_ZONE: Record<Category, Zone> = {
   felpe_maglioni: 'busto',
   giacche_cappotti: 'busto',
   pantaloni: 'gambe',
+  jeans: 'gambe',
   scarpe: 'piedi',
   accessori: 'accessorio',
 }
@@ -55,6 +59,7 @@ export const CATEGORY_LAYER_RANK: Record<Category, number> = {
   felpe_maglioni: 3,
   giacche_cappotti: 4,
   pantaloni: 1,
+  jeans: 1,
   scarpe: 1,
   accessori: 1,
 }

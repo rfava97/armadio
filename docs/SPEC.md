@@ -11,7 +11,7 @@ Navigazione: bottom bar con 3 tab → **Armadio** (icona gruccia) · **Outfit** 
 ### 1.1 Lista capi
 - Header: titolo "Il tuo armadio", pulsante cerca (icona lente), pulsante "+" primario (circolare, accent).
 - Tab categorie scorrevoli orizzontalmente, con indicatore sottolineato sotto la tab attiva:
-  `Tutto · Maglie · Camicie · Canotte · Felpe e Maglioni · Giacche e Cappotti · Pantaloni · Scarpe · Accessori`
+  `Tutto · Maglie · Camicie · Canotte · Felpe e Maglioni · Giacche e Cappotti · Pantaloni · Jeans · Scarpe · Accessori`
 - Griglia a 2 colonne di card: immagine scontornata su fondo grigio chiarissimo, nome del capo, categoria in grigio.
 - Ricerca: filtra per nome, colore, tag (client-side).
 - Tap su card → dettaglio capo (bottom sheet): immagine grande, nome, categoria, colore, tag, "Prova nel camerino", "Modifica", "Elimina" (con conferma).
@@ -55,7 +55,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - **Zone**: `busto` (strati), `gambe`, `piedi`. Tap su una zona dell'avatar la rende attiva (bordo/alone leggero).
 - **Swipe orizzontale** sull'avatar: scorre i capi della zona attiva, filtrati per categorie compatibili:
   - busto → Maglie, Camicie, Canotte, Felpe e Maglioni, Giacche e Cappotti
-  - gambe → Pantaloni
+  - gambe → Pantaloni, Jeans
   - piedi → Scarpe
 - **Long-press (500 ms) sul busto** → aggiunge un nuovo strato sopra (es. Henley + felpa), con feedback: anello che si riempie durante la pressione + vibrazione (`navigator.vibrate` dove disponibile). Lo swipe agisce poi sul nuovo strato.
 - Pulsante visibile **"+ Strato"** accanto agli indicatori (alternativa al long-press, per la scopribilità).
