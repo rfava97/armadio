@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
-import { ArrowLeft, Mail } from 'lucide-react'
+import { ArrowLeft, KeyRound, Mail } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/auth/context'
 import { Button } from '@/components/ui/button'
@@ -23,12 +23,29 @@ function parseEmailLink(value: string): { tokenHash: string; type: 'magiclink' |
 export default function Login() {
   const { session } = useAuth()
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
-  const [step, setStep] = useState<'email' | 'code'>('email')
+  const [step, setStep] = useState<'password' | 'email' | 'code'>('password')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   if (session) return <Navigate to="/armadio" replace />
+
+  function goTo(next: typeof step) {
+    setError(null)
+    setStep(next)
+  }
+
+  async function signInWithPassword(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
+    setBusy(false)
+    if (error) {
+      setError(error.code === 'invalid_credentials' ? 'Email o password errati' : error.message)
+    }
+  }
 
   async function sendLink(e: FormEvent) {
     e.preventDefault()
@@ -62,7 +79,42 @@ export default function Login() {
     <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center px-gutter pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]">
       <h1 className="text-screen-title">Armadio</h1>
 
-      {step === 'email' ? (
+      {step === 'password' && (
+        <form onSubmit={signInWithPassword} className="mt-8 flex flex-col gap-4">
+          <label className="flex flex-col gap-2">
+            <span className="text-label font-medium text-fg-muted">Email</span>
+            <Input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="nome@esempio.it"
+            />
+          </label>
+          <label className="flex flex-col gap-2">
+            <span className="text-label font-medium text-fg-muted">Password</span>
+            <Input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          <Button type="submit" disabled={busy || !email || !password}>
+            <KeyRound className="size-5" aria-hidden />
+            {busy ? 'Accesso…' : 'Accedi'}
+          </Button>
+          <Button type="button" variant="ghost" size="md" onClick={() => goTo('email')}>
+            <Mail className="size-4" aria-hidden />
+            Accedi con un link via email
+          </Button>
+        </form>
+      )}
+
+      {step === 'email' && (
         <form onSubmit={sendLink} className="mt-8 flex flex-col gap-4">
           <p className="text-fg-muted">Ti mando un link di accesso via email.</p>
           <label className="flex flex-col gap-2">
@@ -81,8 +133,14 @@ export default function Login() {
             <Mail className="size-5" aria-hidden />
             {busy ? 'Invio in corso…' : 'Invia link di accesso'}
           </Button>
+          <Button type="button" variant="ghost" size="md" onClick={() => goTo('password')}>
+            <KeyRound className="size-4" aria-hidden />
+            Accedi con password
+          </Button>
         </form>
-      ) : (
+      )}
+
+      {step === 'code' && (
         <form onSubmit={verifyCode} className="mt-8 flex flex-col gap-4">
           <p className="text-fg-muted">
             Controlla la posta di <span className="text-fg">{email}</span>. Se usi l'app installata, non aprire
@@ -103,7 +161,7 @@ export default function Login() {
           <Button type="submit" disabled={busy || code.length < 6}>
             {busy ? 'Verifica…' : 'Accedi'}
           </Button>
-          <Button type="button" variant="ghost" size="md" onClick={() => setStep('email')}>
+          <Button type="button" variant="ghost" size="md" onClick={() => goTo('email')}>
             <ArrowLeft className="size-4" aria-hidden />
             Cambia email
           </Button>
