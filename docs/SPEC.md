@@ -125,7 +125,7 @@ Vedi `supabase/schema.sql`. Entità: `profiles` (misure, modalità avatar, foto 
 - `tryon` — rimandata.
 
 ## 5b. Keep-alive (piano Free)
-I progetti Supabase gratuiti vanno in pausa dopo 7 giorni senza attività. Aggiungere `.github/workflows/keepalive.yml`: GitHub Action con cron ogni 3 giorni che fa una SELECT leggera su `garments` tramite REST con la anon key (secrets del repo). Gratis.
+I progetti Supabase gratuiti vanno in pausa dopo 7 giorni senza attività. Aggiungere `.github/workflows/keepalive.yml`: GitHub Action con cron ogni 3 giorni che fa una SELECT leggera su `garments` tramite REST con la publishable key (secrets del repo). Gratis.
 
 ## 6. Fuori scope (v1)
 Social, condivisione pubblica, più utenti, suggerimenti AI automatici di abbinamento, meteo. Annotarli come idee in `docs/IDEAS.md` se emergono.

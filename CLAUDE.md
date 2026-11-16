@@ -32,7 +32,7 @@ Nessun servizio a pagamento, nessuna carta di credito collegata a nessun account
 
 ## Regole
 - Mobile first, viewport 390×844 come riferimento. Testa sempre anche 375px.
-- Nessuna chiave segreta nel client. Solo `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` nel frontend. La chiave del try-on vive solo nei secrets delle Edge Functions.
+- Nessuna chiave segreta nel client. Solo `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` nel frontend. La chiave del try-on vive solo nei secrets delle Edge Functions.
 - Tutte le immagini dei capi sono salvate come WebP con trasparenza (qualità 0.85), lato lungo max 1000px, obiettivo < 200 KB per capo, nel bucket privato `garments`. Non salvare l'originale di default (spreca storage del piano Free); solo se l'utente lo chiede. Genera anche una miniatura 400px per la griglia. Le foto del corpo nel bucket privato `body`. Usa URL firmati.
 - Ogni tabella ha RLS attiva con `user_id = auth.uid()`.
 - Testi UI in italiano.
@@ -44,10 +44,10 @@ Nessun servizio a pagamento, nessuna carta di credito collegata a nessun account
 ## Variabili d'ambiente
 ```
 VITE_SUPABASE_URL=
-VITE_SUPABASE_ANON_KEY=
+VITE_SUPABASE_PUBLISHABLE_KEY=
 # Edge Functions (supabase secrets set ...)
 GEMINI_API_KEY=        # opzionale, solo fase Stilista-chat
-# GitHub Actions secrets (keep-alive)
+# GitHub Actions secrets (deploy + keep-alive)
 SUPABASE_URL=
-SUPABASE_ANON_KEY=
+SUPABASE_PUBLISHABLE_KEY=
 ```
