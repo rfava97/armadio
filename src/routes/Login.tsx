@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
-import { ArrowLeft, KeyRound, Mail } from 'lucide-react'
+import { ArrowLeft, KeyRound, Mail, UserPlus } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/auth/context'
 import { Button } from '@/components/ui/button'
@@ -24,8 +24,10 @@ export default function Login() {
   const { session } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [confirm, setConfirm] = useState('')
   const [code, setCode] = useState('')
-  const [step, setStep] = useState<'password' | 'email' | 'code'>('password')
+  const [step, setStep] = useState<'password' | 'signup' | 'email' | 'code'>('password')
+  const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -33,6 +35,7 @@ export default function Login() {
 
   function goTo(next: typeof step) {
     setError(null)
+    setInfo(null)
     setStep(next)
   }
 
@@ -44,6 +47,34 @@ export default function Login() {
     setBusy(false)
     if (error) {
       setError(error.code === 'invalid_credentials' ? 'Email o password errati' : error.message)
+    }
+  }
+
+  async function signUp(e: FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    setInfo(null)
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: { emailRedirectTo: window.location.origin + import.meta.env.BASE_URL },
+    })
+    setBusy(false)
+    if (error) {
+      setError(
+        error.code === 'user_already_exists'
+          ? 'Esiste già un account con questa email: accedi'
+          : error.code === 'signup_disabled'
+            ? 'Le registrazioni sono disattivate in Supabase'
+            : error.message,
+      )
+      return
+    }
+    // Con "Confirm email" disattivato la sessione arriva subito e si entra nell'app.
+    if (!data.session) {
+      setInfo("Account creato. Conferma l'email dal link che ti ho mandato, poi accedi con la password.")
+      setStep('password')
     }
   }
 
@@ -111,6 +142,60 @@ export default function Login() {
             <Mail className="size-4" aria-hidden />
             Accedi con un link via email
           </Button>
+          <Button type="button" variant="ghost" size="md" onClick={() => goTo('signup')}>
+            <UserPlus className="size-4" aria-hidden />
+            Crea account
+          </Button>
+        </form>
+      )}
+
+      {step === 'signup' && (
+        <form onSubmit={signUp} className="mt-8 flex flex-col gap-4">
+          <p className="text-fg-muted">Crea il tuo account con email e password.</p>
+          <label className="flex flex-col gap-2">
+            <span className="text-label font-medium text-fg-muted">Email</span>
+            <Input
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="nome@esempio.it"
+            />
+          </label>
+          <label className="flex flex-col gap-2">
+            <span className="text-label font-medium text-fg-muted">Password (almeno 8 caratteri)</span>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              minLength={8}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </label>
+          <label className="flex flex-col gap-2">
+            <span className="text-label font-medium text-fg-muted">Ripeti password</span>
+            <Input
+              type="password"
+              autoComplete="new-password"
+              required
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </label>
+          {confirm.length > 0 && password !== confirm && (
+            <p className="text-caption text-danger">Le password non coincidono</p>
+          )}
+          <Button type="submit" disabled={busy || !email || password.length < 8 || password !== confirm}>
+            <UserPlus className="size-5" aria-hidden />
+            {busy ? 'Creazione…' : 'Crea account'}
+          </Button>
+          <Button type="button" variant="ghost" size="md" onClick={() => goTo('password')}>
+            <ArrowLeft className="size-4" aria-hidden />
+            Ho già un account
+          </Button>
         </form>
       )}
 
@@ -166,6 +251,12 @@ export default function Login() {
             Cambia email
           </Button>
         </form>
+      )}
+
+      {info && (
+        <p role="status" className="mt-4 text-caption text-fg">
+          {info}
+        </p>
       )}
 
       {error && (
