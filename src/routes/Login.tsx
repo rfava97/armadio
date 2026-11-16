@@ -6,6 +6,20 @@ import { useAuth } from '@/auth/context'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+function parseEmailLink(value: string): { tokenHash: string; type: 'magiclink' | 'signup' | 'email' } | null {
+  if (!/^https?:\/\//.test(value)) return null
+  try {
+    const url = new URL(value)
+    const tokenHash = url.searchParams.get('token') ?? url.searchParams.get('token_hash')
+    if (!tokenHash) return null
+    const t = url.searchParams.get('type')
+    const type = t === 'signup' || t === 'email' ? t : 'magiclink'
+    return { tokenHash, type }
+  } catch {
+    return null
+  }
+}
+
 export default function Login() {
   const { session } = useAuth()
   const [email, setEmail] = useState('')
@@ -33,9 +47,15 @@ export default function Login() {
     e.preventDefault()
     setBusy(true)
     setError(null)
-    const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: code.trim(), type: 'email' })
+    const value = code.trim()
+    // Nell'app installata su iPhone il link dell'email si apre in Safari (sessione separata):
+    // si può incollare qui il link copiato, che contiene il token_hash.
+    const linkToken = parseEmailLink(value)
+    const { error } = linkToken
+      ? await supabase.auth.verifyOtp({ token_hash: linkToken.tokenHash, type: linkToken.type })
+      : await supabase.auth.verifyOtp({ email: email.trim(), token: value, type: 'email' })
     setBusy(false)
-    if (error) setError('Codice non valido o scaduto')
+    if (error) setError(linkToken ? 'Link non valido o scaduto' : 'Codice non valido o scaduto')
   }
 
   return (
@@ -65,16 +85,16 @@ export default function Login() {
       ) : (
         <form onSubmit={verifyCode} className="mt-8 flex flex-col gap-4">
           <p className="text-fg-muted">
-            Controlla la posta di <span className="text-fg">{email}</span>. Apri il link oppure, se usi l'app
-            installata, inserisci qui il codice dell'email.
+            Controlla la posta di <span className="text-fg">{email}</span>. Se usi l'app installata, non aprire
+            il link: inserisci qui il codice, oppure tieni premuto il link, copialo e incollalo qui.
           </p>
           <label className="flex flex-col gap-2">
-            <span className="text-label font-medium text-fg-muted">Codice</span>
+            <span className="text-label font-medium text-fg-muted">Codice o link dell'email</span>
             <Input
-              inputMode="numeric"
               autoComplete="one-time-code"
-              pattern="[0-9]*"
-              maxLength={10}
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
               value={code}
               onChange={(e) => setCode(e.target.value)}
               placeholder="123456"
