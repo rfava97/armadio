@@ -249,7 +249,12 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
       }
     } catch (e) {
       console.error(e)
-      setSaveError(e instanceof Error ? e.message : 'Salvataggio non riuscito')
+      const msg = e instanceof Error ? e.message : ''
+      setSaveError(
+        msg.includes('enum garment_category')
+          ? 'Il database non conosce ancora questa categoria: va eseguita la migrazione in Supabase.'
+          : msg || 'Salvataggio non riuscito',
+      )
     } finally {
       setSaving(false)
     }

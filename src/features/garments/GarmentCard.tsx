@@ -8,11 +8,13 @@ import type { GarmentWithThumb } from './api'
 export function GarmentCard({ garment, onOpen }: { garment: GarmentWithThumb; onOpen: () => void }) {
   const key = garment.image_path
   const [scale, setScale] = useState<number | undefined>(() => cachedMassScale(key))
-  const pct = `${(scale ?? 1) * 100}%`
+  // 24px = margine interno attorno al capo
+  const size = `calc((100% - 24px) * ${scale ?? 1})`
 
   return (
-    <button type="button" onClick={onOpen} className="flex flex-col text-left">
-      <div className="flex aspect-[4/5] w-full items-center justify-center rounded-card bg-surface-muted p-3 shadow-card">
+    <button type="button" onClick={onOpen} className="flex min-w-0 flex-col text-left">
+      {/* il riquadro ha sempre la stessa forma: l'immagine è posizionata in assoluto e non può allargarlo */}
+      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-card bg-surface-muted shadow-card">
         {garment.thumbUrl ? (
           <img
             src={garment.thumbUrl}
@@ -22,15 +24,15 @@ export function GarmentCard({ garment, onOpen }: { garment: GarmentWithThumb; on
             loading="lazy"
             decoding="async"
             onLoad={(e) => scale === undefined && setScale(massScale(key, e.currentTarget))}
-            style={{ width: pct, height: pct }}
-            className={cn('object-contain transition-opacity', scale === undefined ? 'opacity-0' : 'opacity-100')}
+            style={{ width: size, height: size }}
+            className={cn('absolute inset-0 m-auto object-contain transition-opacity', scale === undefined ? 'opacity-0' : 'opacity-100')}
           />
         ) : (
-          <Shirt className="size-10 text-fg-muted" aria-hidden />
+          <Shirt className="absolute inset-0 m-auto size-10 text-fg-muted" aria-hidden />
         )}
       </div>
-      <span className="mt-2 line-clamp-2 text-card font-medium">{garment.name}</span>
-      <span className="text-caption text-fg-muted">{CATEGORY_SINGULAR[garment.category]}</span>
+      <span className="mt-2 truncate text-card font-medium">{garment.name}</span>
+      <span className="truncate text-caption text-fg-muted">{CATEGORY_SINGULAR[garment.category]}</span>
     </button>
   )
 }
