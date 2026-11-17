@@ -28,6 +28,9 @@ class HttpError extends Error {
   }
 }
 
+/** errore del modello senza testo (Gradio non lo mostra): quasi sempre quota GPU finita */
+const SILENT = /senza messaggio/
+
 type Category = 'tops' | 'bottoms'
 type PhotoType = 'flat-lay' | 'model'
 type FileData = { path: string; meta: { _type: 'gradio.FileData' } }
@@ -70,8 +73,9 @@ const MODELS: Model[] = [
   },
 ]
 
-function hfHeaders(): Record<string, string> {
-  const token = Deno.env.get('HF_TOKEN')
+/** anonymous: senza token, per usare la quota anonima quando quella dell'account è finita */
+function hfHeaders(anonymous = false): Record<string, string> {
+  const token = anonymous ? undefined : Deno.env.get('HF_TOKEN')
   // come il client ufficiale di Gradio: la quota ZeroGPU viene conteggiata su questo account
   return token ? { 'X-HF-Authorization': `Bearer ${token}` } : {}
 }
@@ -104,12 +108,12 @@ async function isAvailable(m: Model): Promise<boolean> {
   }
 }
 
-async function upload(m: Model, bytes: Uint8Array, name: string): Promise<FileData> {
+async function upload(m: Model, bytes: Uint8Array, name: string, anon: boolean): Promise<FileData> {
   const form = new FormData()
   form.append('files', new Blob([bytes], { type: 'image/jpeg' }), name)
   const r = await fetch(`${m.host}/gradio_api/upload`, {
     method: 'POST',
-    headers: hfHeaders(),
+    headers: hfHeaders(anon),
     body: form,
     signal: AbortSignal.timeout(30_000),
   })
@@ -119,9 +123,9 @@ async function upload(m: Model, bytes: Uint8Array, name: string): Promise<FileDa
 }
 
 /** Legge lo stream SSE di Gradio fino a "complete" (o errore). */
-async function waitResult(m: Model, eventId: string, deadline: number): Promise<unknown[]> {
+async function waitResult(m: Model, eventId: string, deadline: number, anon: boolean): Promise<unknown[]> {
   const r = await fetch(`${m.host}/gradio_api/call/${m.api}/${eventId}`, {
-    headers: hfHeaders(),
+    headers: hfHeaders(anon),
     signal: AbortSignal.timeout(Math.max(1000, deadline - Date.now())),
   })
   if (!r.ok || !r.body) throw new Error(`stream ${r.status}`)
@@ -158,21 +162,29 @@ async function waitResult(m: Model, eventId: string, deadline: number): Promise<
   throw new Error('stream chiuso senza risultato')
 }
 
-async function runModel(m: Model, person: Uint8Array, garment: Uint8Array, category: Category, photo: PhotoType, deadline: number) {
-  const [p, g] = await Promise.all([upload(m, person, 'person.jpg'), upload(m, garment, 'garment.jpg')])
+async function runModel(
+  m: Model,
+  person: Uint8Array,
+  garment: Uint8Array,
+  category: Category,
+  photo: PhotoType,
+  deadline: number,
+  anon = false,
+) {
+  const [p, g] = await Promise.all([upload(m, person, 'person.jpg', anon), upload(m, garment, 'garment.jpg', anon)])
   const r = await fetch(`${m.host}/gradio_api/call/${m.api}`, {
     method: 'POST',
-    headers: { ...hfHeaders(), 'Content-Type': 'application/json' },
+    headers: { ...hfHeaders(anon), 'Content-Type': 'application/json' },
     body: JSON.stringify({ data: m.data(p, g, category, photo) }),
     signal: AbortSignal.timeout(20_000),
   })
   if (!r.ok) throw new Error(`call ${r.status}`)
   const { event_id } = (await r.json()) as { event_id: string }
-  const out = await waitResult(m, event_id, deadline)
+  const out = await waitResult(m, event_id, deadline, anon)
   const first = out[0] as { url?: string; path?: string } | null
   const url = first?.url ?? (first?.path ? `${m.host}/gradio_api/file=${first.path}` : null)
   if (!url) throw new Error('risultato senza immagine')
-  const img = await fetch(url, { headers: hfHeaders(), signal: AbortSignal.timeout(20_000) })
+  const img = await fetch(url, { headers: hfHeaders(anon), signal: AbortSignal.timeout(20_000) })
   if (!img.ok) throw new Error(`download ${img.status}`)
   return { bytes: new Uint8Array(await img.arrayBuffer()), type: img.headers.get('content-type') ?? 'image/png' }
 }
@@ -203,21 +215,39 @@ Deno.serve(async (req) => {
     let lastError: unknown = null
     // perché ogni modello non ha risposto: finisce nel messaggio, per capire cosa succede
     const reasons: string[] = []
+    let silent = 0 // rifiuti senza messaggio: di solito quota dell'account finita
     for (const m of MODELS) {
       if (Date.now() > deadline - 30_000) break
       if (!(await isAvailable(m))) {
         reasons.push(`${m.name}: non disponibile`)
         continue
       }
+      const ok = (r: { bytes: Uint8Array; type: string }) =>
+        new Response(r.bytes, { headers: { ...cors, 'Content-Type': r.type, 'x-tryon-model': m.name, 'Cache-Control': 'no-store' } })
       try {
-        const { bytes, type } = await runModel(m, person, garment, category, photo, deadline)
-        return new Response(bytes, { headers: { ...cors, 'Content-Type': type, 'x-tryon-model': m.name, 'Cache-Control': 'no-store' } })
+        return ok(await runModel(m, person, garment, category, photo, deadline))
       } catch (e) {
+        // rifiuto senza spiegazioni con il token: riprovo con la quota anonima
+        if (!(e instanceof HttpError) && SILENT.test(String((e as Error)?.message)) && Deno.env.get('HF_TOKEN')) {
+          silent++
+          console.warn(m.id, 'rifiuto senza messaggio con il token, riprovo senza')
+          try {
+            return ok(await runModel(m, person, garment, category, photo, deadline, true))
+          } catch (e2) {
+            e = e2
+          }
+        } else if (SILENT.test(String((e as Error)?.message))) silent++
         if (e instanceof HttpError) throw e // quota finita: inutile provare altri modelli
         console.error(m.id, e)
         reasons.push(`${m.name}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160))
         lastError = e
       }
+    }
+    if (silent > 0 && silent === reasons.length) {
+      throw new HttpError(
+        429,
+        'Hugging Face ha rifiutato la richiesta senza spiegazioni: di solito vuol dire che la quota gratuita di oggi è finita. Si ricarica nel giro di 24 ore.',
+      )
     }
     if (lastError instanceof DOMException && lastError.name === 'TimeoutError') {
       throw new HttpError(504, 'Hugging Face è molto occupato in questo momento: riprova tra qualche minuto.')
