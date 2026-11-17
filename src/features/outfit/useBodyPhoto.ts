@@ -35,6 +35,8 @@ export function usePreparedBody(
   anchors: Anchors | null | undefined,
   /** chiave stabile della foto (percorso nello storage) per non ricalcolare la pose */
   key: string | null | undefined,
+  /** riconosce le articolazioni (modalità "Segue il corpo") */
+  withPose = true,
 ) {
   const [state, setState] = useState<{ src: string; body: PreparedBody } | null>(null)
 
@@ -64,6 +66,10 @@ export function usePreparedBody(
         url = b ? URL.createObjectURL(b) : src
         const body: PreparedBody = { url, aspect: w / h, hipWidth, pose: undefined }
         setState({ src, body })
+        if (!withPose) {
+          setState({ src, body: { ...body, pose: null } })
+          return
+        }
         // gomiti, polsi, anche e ginocchia: riconosciuti nel browser, una volta per foto
         detectPose(key ?? src, c)
           .then((pose) => !cancelled && setState({ src, body: { ...body, pose } }))
@@ -78,7 +84,7 @@ export function usePreparedBody(
       cancelled = true
       if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
     }
-  }, [src, anchors, key])
+  }, [src, anchors, key, withPose])
 
   return state && state.src === src ? state.body : null
 }

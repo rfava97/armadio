@@ -43,6 +43,8 @@ type Props = {
   onSelectZone: (zone: StageZone) => void
   onStep: (dir: 1 | -1) => void
   onAddLayer: () => void
+  /** modalità "Semplice" (vedi settings.ts) */
+  simple?: boolean
 }
 
 const LONG_PRESS_MS = 500
@@ -86,7 +88,7 @@ function headClip(a: Anchors, w: number, h: number): string {
   return `polygon(${pts.map(([x, y]) => `${((x / w) * 100).toFixed(2)}% ${((y / h) * 100).toFixed(2)}%`).join(', ')})`
 }
 
-export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer }: Props) {
+export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer, simple }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [dressed, setDressed] = useState<Record<string, Dressed>>({})
@@ -143,6 +145,7 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
       sk,
       hipWidth: avatar.hipWidth * av.w,
       tuckY: tucked ? tuckLine(avatar.anchors, av.h) : undefined,
+      simple,
     }
     const r = layoutGarment(layout)
     return { layout, rect: { ...r, left: r.left + av.left, top: r.top + av.top } }

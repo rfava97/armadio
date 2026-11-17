@@ -18,6 +18,8 @@ export type GarmentLayout = {
   hipWidth: number
   /** se la maglia è infilata: riga (px) sotto cui il busto sparisce nei pantaloni */
   tuckY?: number
+  /** modalità "Semplice": maniche dritte e pantaloni in un pezzo, senza piegarli sulle articolazioni */
+  simple?: boolean
 }
 
 /**
@@ -119,6 +121,11 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
       const split = upper / (s * k) // punto della manica che va sul gomito (px del capo)
       const D1 = norm(sub(elbow, S0))
       const rect: Piece['rect'] = [sl.from, 0, sl.to - sl.from, d.h]
+      if (L.simple) {
+        // manica rigida, dalla spalla verso il polso
+        pieces.push({ sleeve: true, m: axisMatrix(sl.pivot, sl.axis, S0, norm(sub(wrist, S0)), s * k, s), rect })
+        continue
+      }
       pieces.push({
         sleeve: true,
         m: axisMatrix(sl.pivot, sl.axis, S0, D1, s * k, s),
@@ -143,9 +150,15 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
     const sy = clamp((crotchBody - waistY) / Math.max(1, b.crotchY), sx * 0.7, sx * 1.5)
     const pelvis: M = [sx, 0, 0, sy, waistX - b.waist.cx * sx, waistY]
     shift = { x: fit.ox * d.w * sx, y: fit.oy * d.h * sy }
-    pieces.push({ m: pelvis, rect: [0, 0, d.w, b.crotchY + 4] })
+    if (L.simple) {
+      // pantalone intero dalla vita alle caviglie, appena adattato in altezza
+      const ankleY = mid(sk.ankleL, sk.ankleR).y
+      const syAll = clamp((ankleY * 1.0 + thigh * 0.08 - waistY) / d.h, sx * 0.77, sx * 1.3)
+      pieces.push({ m: [sx, 0, 0, syAll, waistX - b.waist.cx * sx, waistY], rect: [0, 0, d.w, d.h] })
+      shift = { x: fit.ox * d.w * sx, y: fit.oy * d.h * syAll }
+    } else pieces.push({ m: pelvis, rect: [0, 0, d.w, b.crotchY + 4] })
 
-    b.legs.forEach((leg, i) => {
+    if (!L.simple) b.legs.forEach((leg, i) => {
       const knee = i === 0 ? sk.kneeL : sk.kneeR
       const ankle0 = i === 0 ? sk.ankleL : sk.ankleR
       const S = apply(pelvis, leg.top)
