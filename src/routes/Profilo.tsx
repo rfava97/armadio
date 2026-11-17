@@ -9,6 +9,8 @@ import { useBodyPhotoUrl, useProfile, useSaveProfile, type AvatarMode } from '@/
 import { MeasuresSheet } from '@/features/profile/MeasuresSheet'
 import { BodyPhotoSheet, CalibrateSheet } from '@/features/profile/BodyPhotoSheet'
 import { AnchorEditor } from '@/features/profile/AnchorEditor'
+import { FavoritesSection } from '@/features/outfits/FavoritesSection'
+import { CamerinoSettingsCard } from '@/features/outfit/CamerinoSettingsCard'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/auth/context'
 import { Button } from '@/components/ui/button'
@@ -251,6 +253,12 @@ export default function Profilo() {
           />
         </>
       )}
+
+      <SectionTitle>I tuoi outfit preferiti</SectionTitle>
+      <FavoritesSection />
+
+      <SectionTitle>Camerino</SectionTitle>
+      <CamerinoSettingsCard />
 
       <SectionTitle>Account</SectionTitle>
       <p className="text-fg-muted">

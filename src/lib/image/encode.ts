@@ -52,3 +52,14 @@ export async function encodeBodyPhoto(src: HTMLCanvasElement): Promise<Blob> {
   }
   return image
 }
+
+/** Immagine generata da "Provalo su di me": WebP lato lungo 1400px per i preferiti. */
+export async function encodeRender(src: Blob): Promise<Blob> {
+  const bmp = await createImageBitmap(src)
+  const c = document.createElement('canvas')
+  c.width = bmp.width
+  c.height = bmp.height
+  ctx2d(c).drawImage(bmp, 0, 0)
+  bmp.close()
+  return toWebp(drawScaled(c, 1400), 0.85)
+}

@@ -14,6 +14,7 @@ import { Stage, type AvatarSource } from '@/features/outfit/Stage'
 import { usePreparedBody } from '@/features/outfit/useBodyPhoto'
 import { PickerSheet } from '@/features/outfit/PickerSheet'
 import { TryOnSheet } from '@/features/outfit/TryOnSheet'
+import { useCamerinoSettings } from '@/features/outfit/settings'
 import {
   addLayer,
   candidates,
@@ -40,12 +41,14 @@ type NavState = { garmentId?: string; adjust?: boolean } | null
 export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
   const { data: profile } = useProfile()
+  const settings = useCamerinoSettings()
   // la foto serve sia come avatar sia per "Provalo su di me"
   const photo = useBodyPhotoUrl(profile?.body_photo_path)
   const body = usePreparedBody(
     profile?.avatar_mode === 'foto' ? photo.data : null,
     profile?.avatar_mode === 'foto' ? profile.body_anchors : null,
     profile?.body_photo_path,
+    settings.mode === 'corpo',
   )
   const [state, setState] = useState<CamerinoState | null>(null)
   const [picking, setPicking] = useState(false)
@@ -147,15 +150,17 @@ export default function Outfit() {
           >
             <Search className="size-5" />
           </button>
-          <button
-            type="button"
-            aria-label="Provalo su di me"
-            onClick={() => setTrying(true)}
-            disabled={!state || !!adjust}
-            className="flex size-11 items-center justify-center rounded-full text-accent disabled:opacity-40"
-          >
-            <Sparkles className="size-5" />
-          </button>
+          {settings.tryOn && (
+            <button
+              type="button"
+              aria-label="Provalo su di me"
+              onClick={() => setTrying(true)}
+              disabled={!state || !!adjust}
+              className="flex size-11 items-center justify-center rounded-full text-accent disabled:opacity-40"
+            >
+              <Sparkles className="size-5" />
+            </button>
+          )}
           <button
             type="button"
             aria-label="Mescola"
@@ -266,6 +271,7 @@ export default function Outfit() {
               onSelectZone={(zone) => update((s) => (s.active.zone === zone ? s : { ...s, active: { zone, layer: 0 } }))}
               onStep={(d) => update((s) => setActiveId(s, neighbor(s, garments, d)))}
               onAddLayer={() => update((s) => addLayer(s, garments))}
+              simple={settings.mode === 'semplice'}
             />
             {zoneCount === 0 && (
               <p className="pointer-events-none absolute inset-x-0 top-1/2 text-center text-caption text-fg-muted">
@@ -351,6 +357,7 @@ export default function Outfit() {
                 .sort((a, b) => b.layer_rank - a.layer_rank)[0]
             }
             bottom={state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined}
+            state={state}
           />
           <PickerSheet
             open={picking}

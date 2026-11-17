@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Download, RotateCcw, Sparkles } from 'lucide-react'
+import { Check, Download, Heart, RotateCcw, Sparkles } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
+import { Chip } from '@/components/Chip'
+import { Input } from '@/components/ui/input'
+import { useToast } from '@/components/toast'
+import { OUTFIT_STYLES, STYLE_LABEL, useSaveRenderedOutfit, type OutfitStyle } from '@/features/outfits/api'
+import type { CamerinoState } from './state'
 import type { GarmentWithThumb } from '@/features/garments/api'
 import { garmentImageUrl, tryOnOutfit, type TryOnStep } from '@/lib/tryon'
 
@@ -23,6 +28,7 @@ export function TryOnSheet({
   bodyUrl,
   top,
   bottom,
+  state,
 }: {
   open: boolean
   onClose: () => void
@@ -30,9 +36,16 @@ export function TryOnSheet({
   bodyUrl: string | null
   top?: GarmentWithThumb
   bottom?: GarmentWithThumb
+  /** il camerino al momento della generazione: viene salvato con l'outfit */
+  state: CamerinoState
 }) {
   const [step, setStep] = useState<TryOnStep | null>(null)
-  const [result, setResult] = useState<{ url: string; model: string } | null>(null)
+  const [result, setResult] = useState<{ url: string; model: string; blob: Blob; state: CamerinoState } | null>(null)
+  const [name, setName] = useState('')
+  const [style, setStyle] = useState<OutfitStyle>('casual')
+  const [saved, setSaved] = useState(false)
+  const saveMut = useSaveRenderedOutfit()
+  const toast = useToast()
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => () => {
@@ -43,13 +56,15 @@ export function TryOnSheet({
     if (!bodyUrl) return
     setError(null)
     setResult(null)
+    setSaved(false)
+    const snapshot = state
     try {
       const [topUrl, bottomUrl] = await Promise.all([
         top ? garmentImageUrl(top.image_path) : Promise.resolve(undefined),
         bottom ? garmentImageUrl(bottom.image_path) : Promise.resolve(undefined),
       ])
       const out = await tryOnOutfit({ body: bodyUrl, top: topUrl, bottom: bottomUrl }, setStep)
-      setResult({ url: URL.createObjectURL(out.blob), model: out.model })
+      setResult({ url: URL.createObjectURL(out.blob), model: out.model, blob: out.blob, state: snapshot })
     } catch (e) {
       console.error(e)
       setError(e instanceof Error ? e.message : 'Generazione non riuscita.')
@@ -102,14 +117,57 @@ export function TryOnSheet({
             </p>
           )}
 
+          {result && !saved && (
+            <div className="flex flex-col gap-3 rounded-card border border-border p-4">
+              <label className="flex flex-col gap-2">
+                <span className="text-label font-medium text-fg-muted">Nome dell'outfit</span>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Es. Weekend" />
+              </label>
+              <div className="flex flex-col gap-2">
+                <span className="text-label font-medium text-fg-muted">Stile</span>
+                <div className="flex flex-wrap gap-2">
+                  {OUTFIT_STYLES.map((st) => (
+                    <Chip key={st} selected={style === st} onClick={() => setStyle(st)}>
+                      {STYLE_LABEL[st]}
+                    </Chip>
+                  ))}
+                </div>
+              </div>
+              <Button
+                disabled={!name.trim() || saveMut.isPending}
+                onClick={() =>
+                  saveMut.mutate(
+                    { name, style, image: result.blob, state: result.state },
+                    {
+                      onSuccess: () => {
+                        setSaved(true)
+                        toast('Aggiunto ai preferiti')
+                      },
+                    },
+                  )
+                }
+              >
+                {saveMut.isPending ? <Spinner /> : <Heart className="size-5" aria-hidden />}
+                {saveMut.isPending ? 'Salvataggio…' : 'Salva nei preferiti'}
+              </Button>
+              {saveMut.error && <p className="text-caption text-danger">{saveMut.error.message}</p>}
+            </div>
+          )}
+          {saved && (
+            <p className="flex items-center gap-2 text-card" role="status">
+              <Check className="size-5 text-accent" aria-hidden />
+              Salvato nei preferiti: lo trovi nel Profilo.
+            </p>
+          )}
+
           {result ? (
             <div className="flex flex-col gap-2">
               <a
                 href={result.url}
                 download="armadio-outfit.png"
-                className="flex h-14 items-center justify-center gap-2 rounded-full bg-accent font-semibold text-on-accent"
+                className="flex h-11 items-center justify-center gap-2 rounded-full border border-border bg-surface text-card font-semibold text-fg"
               >
-                <Download className="size-5" aria-hidden />
+                <Download className="size-5 text-accent" aria-hidden />
                 Salva l'immagine
               </a>
               <Button variant="ghost" size="md" onClick={run}>
