@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Move, Plus, RotateCcw, Search, Shuffle, X } from 'lucide-react'
+import { Move, Plus, RotateCcw, Search, Shuffle, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/Slider'
 import { Spinner } from '@/components/Spinner'
@@ -13,6 +13,7 @@ import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
 import { Stage, type AvatarSource } from '@/features/outfit/Stage'
 import { usePreparedBody } from '@/features/outfit/useBodyPhoto'
 import { PickerSheet } from '@/features/outfit/PickerSheet'
+import { TryOnSheet } from '@/features/outfit/TryOnSheet'
 import {
   addLayer,
   candidates,
@@ -39,14 +40,16 @@ type NavState = { garmentId?: string; adjust?: boolean } | null
 export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
   const { data: profile } = useProfile()
-  const photo = useBodyPhotoUrl(profile?.avatar_mode === 'foto' ? profile.body_photo_path : null)
+  // la foto serve sia come avatar sia per "Provalo su di me"
+  const photo = useBodyPhotoUrl(profile?.body_photo_path)
   const body = usePreparedBody(
-    photo.data,
+    profile?.avatar_mode === 'foto' ? photo.data : null,
     profile?.avatar_mode === 'foto' ? profile.body_anchors : null,
     profile?.body_photo_path,
   )
   const [state, setState] = useState<CamerinoState | null>(null)
   const [picking, setPicking] = useState(false)
+  const [trying, setTrying] = useState(false)
   const [adjust, setAdjust] = useState<Fit | null>(null)
   const updateFit = useUpdateFit()
   const toast = useToast()
@@ -143,6 +146,15 @@ export default function Outfit() {
             className="flex size-11 items-center justify-center rounded-full text-fg disabled:opacity-40"
           >
             <Search className="size-5" />
+          </button>
+          <button
+            type="button"
+            aria-label="Provalo su di me"
+            onClick={() => setTrying(true)}
+            disabled={!state || !!adjust}
+            className="flex size-11 items-center justify-center rounded-full text-accent disabled:opacity-40"
+          >
+            <Sparkles className="size-5" />
           </button>
           <button
             type="button"
@@ -327,6 +339,19 @@ export default function Outfit() {
             </div>
           )}
 
+          <TryOnSheet
+            open={trying}
+            onClose={() => setTrying(false)}
+            bodyUrl={profile?.body_photo_path ? (photo.data ?? null) : null}
+            top={
+              // lo strato più esterno del busto
+              state.outfit.busto
+                .map((id) => (id ? byId.get(id) : undefined))
+                .filter((g): g is GarmentWithThumb => !!g)
+                .sort((a, b) => b.layer_rank - a.layer_rank)[0]
+            }
+            bottom={state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined}
+          />
           <PickerSheet
             open={picking}
             garments={garments}

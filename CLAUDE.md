@@ -15,7 +15,7 @@ Nessun servizio a pagamento, nessuna carta di credito collegata a nessun account
 - AI di riconoscimento capi e scontornatura: SOLO nel browser (modelli locali), niente API.
 - Meteo: Open-Meteo (gratis, senza chiave).
 - LLM per la chat stilista: opzionale, solo Gemini API free tier, e solo con dati testuali (mai foto del corpo).
-- Virtual try-on a pagamento: VIETATO in questa fase.
+- Virtual try-on a pagamento: VIETATO in questa fase. Ammesso solo quello gratuito su Hugging Face (Edge Function `tryon`), con avviso privacy nell'interfaccia.
 
 ## Stack (non cambiarlo senza chiedere)
 - Vite + React 18 + TypeScript (strict)
@@ -47,6 +47,7 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
 # Edge Functions (supabase secrets set ...)
 GEMINI_API_KEY=        # opzionale, solo fase Stilista-chat
+HF_TOKEN=              # opzionale, token Hugging Face (account gratuito) per "Provalo su di me"
 # GitHub Actions secrets (deploy + keep-alive)
 SUPABASE_URL=
 SUPABASE_PUBLISHABLE_KEY=
