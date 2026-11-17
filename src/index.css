@@ -19,6 +19,9 @@
   --danger: #a8231c;
   --overlay: rgba(11, 31, 68, 0.55);
   --toast: rgba(11, 31, 68, 0.92);
+  --wood: #5b3a25;
+  --wood-dark: #3d2517;
+  --wood-light: #7b5234;
   --mannequin: #ede2d4;
   --mannequin-shadow: #d6c3ab;
 }
@@ -40,6 +43,7 @@
   --color-accent-soft: var(--accent-soft);
   --color-navy: var(--navy);
   --color-champagne: var(--champagne);
+  --color-wood: var(--wood);
   --color-overlay: var(--overlay);
   --color-toast: var(--toast);
 
@@ -143,4 +147,19 @@
 /* Cormorant usa di default numeri "all'antica" (di altezze diverse): nei titoli servono allineati */
 .font-display {
   font-variant-numeric: lining-nums;
+}
+
+/* Legno di noce per la tab bar (come l'anta di un armadio): colore base, venatura generata
+   con un rumore SVG allungato in orizzontale e una leggera luce in alto. Nessuna immagine esterna. */
+.wood {
+  background-color: var(--wood);
+  background-image:
+    linear-gradient(to bottom, rgba(255, 236, 214, 0.16), rgba(255, 236, 214, 0) 45%, rgba(0, 0, 0, 0.18)),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='120'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.0035 0.22' numOctaves='4' seed='7'/%3E%3CfeColorMatrix values='0 0 0 0 0.24 0 0 0 0 0.14 0 0 0 0 0.08 0 0 0 1.6 -0.55'/%3E%3C/filter%3E%3Crect width='600' height='120' filter='url(%23g)'/%3E%3C/svg%3E"),
+    linear-gradient(100deg, var(--wood-dark), var(--wood-light) 35%, var(--wood) 60%, var(--wood-dark));
+  background-size: 100% 100%, 600px 120px, 100% 100%;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 236, 214, 0.22),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    var(--shadow-float);
 }

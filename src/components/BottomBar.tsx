@@ -15,7 +15,7 @@ export function BottomBar() {
       aria-label="Navigazione principale"
       className="fixed inset-x-0 bottom-0 z-40 flex justify-center px-gutter pb-[max(12px,env(safe-area-inset-bottom))]"
     >
-      <ul className="flex w-full max-w-sm items-center justify-between gap-1 rounded-full border border-border bg-surface p-1.5 shadow-float">
+      <ul className="flex w-full max-w-sm items-center justify-between gap-1 wood rounded-full p-1.5">
         {tabs.map(({ to, label, Icon, fillable }) => (
           <li key={to} className="flex-1">
             <NavLink
@@ -23,7 +23,7 @@ export function BottomBar() {
               className={({ isActive }) =>
                 cn(
                   'flex min-h-11 flex-col items-center justify-center gap-0.5 rounded-full py-1.5 text-[12px] font-medium transition-colors',
-                  isActive ? 'bg-navy text-on-accent' : 'text-fg-muted',
+                  isActive ? 'bg-champagne text-accent shadow-card' : 'text-champagne/80',
                 )
               }
             >

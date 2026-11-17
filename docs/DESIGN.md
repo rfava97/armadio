@@ -16,7 +16,8 @@ Direzione: **"atelier"**. Avorio caldo, testi blu navy, un solo accento bordeaux
 | `--accent-soft` | `#F1E1E2` | fondi tenui legati all'accento |
 | `--on-accent` | `#FAF6F0` | testo su accent e su navy |
 | `--navy` | `#0B1F44` | voce attiva della bottom bar, etichette dei marcatori |
-| `--champagne` | `#E8D8C5` | asta appendiabiti, binario degli slider |
+| `--champagne` | `#E8D8C5` | asta appendiabiti, binario degli slider, testo sulla bottom bar |
+| `--wood` / `--wood-dark` / `--wood-light` | `#5B3A25` / `#3D2517` / `#7B5234` | legno di noce della bottom bar |
 | `--like` | `#8E2440` | cuore preferiti |
 | `--danger` | `#A8231C` | elimina, errori |
 | `--overlay` / `--toast` | navy 55% / 92% | fuori dal ritaglio, toast |
@@ -42,7 +43,7 @@ Dark mode: fase successiva (non in v1), ma usa solo token, mai hex nei component
 - Ombre: quasi assenti, tinte di navy. Card: `0 1px 2px rgba(11,31,68,.05)`. Bottom bar e FAB: `0 10px 30px rgba(11,31,68,.12)`.
 
 ## Componenti chiave
-- **Bottom bar**: pill flottante `--surface` con bordo champagne, 3 voci (icona + label); voce attiva con capsula `--navy` e testo avorio, icona piena. Rispetta safe area in basso.
+- **Bottom bar**: pill flottante in legno di noce (classe `.wood`: `--wood` `#5B3A25` con venatura generata in CSS/SVG, nessuna immagine), come l'anta di un armadio. 3 voci (icona + label) in champagne; voce attiva su placchetta `--champagne` con icona e testo `--accent`, icona piena. Rispetta safe area in basso.
 - **Tab categorie**: testo 16/500, attiva in `--accent` con sottolineatura 2px che scorre animata tra le tab.
 - **Asta appendiabiti**: sotto le tab categorie, barra sottile champagne con i due supporti alle estremità.
 - **Card capo**: immagine 4:5 su `--garment-bg`, `object-fit: contain`, margine 12px, dimensione fissa; sotto nome (serif) + categoria (overline).
