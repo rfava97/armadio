@@ -150,7 +150,7 @@ async function waitResult(m: Model, eventId: string, deadline: number): Promise<
           if (/quota|exceeded/i.test(msg)) {
             throw new HttpError(429, 'Quota gratuita di Hugging Face finita per oggi: riprova domani.')
           }
-          throw new Error(`errore del modello ${msg}`)
+          throw new Error(`errore del modello${msg ? ` ${msg}` : ' senza messaggio'}`)
         }
       }
     }
@@ -201,15 +201,21 @@ Deno.serve(async (req) => {
     const garment = decodeImage(body.garment)
 
     let lastError: unknown = null
+    // perché ogni modello non ha risposto: finisce nel messaggio, per capire cosa succede
+    const reasons: string[] = []
     for (const m of MODELS) {
       if (Date.now() > deadline - 30_000) break
-      if (!(await isAvailable(m))) continue
+      if (!(await isAvailable(m))) {
+        reasons.push(`${m.name}: non disponibile`)
+        continue
+      }
       try {
         const { bytes, type } = await runModel(m, person, garment, category, photo, deadline)
         return new Response(bytes, { headers: { ...cors, 'Content-Type': type, 'x-tryon-model': m.name, 'Cache-Control': 'no-store' } })
       } catch (e) {
         if (e instanceof HttpError) throw e // quota finita: inutile provare altri modelli
         console.error(m.id, e)
+        reasons.push(`${m.name}: ${e instanceof Error ? e.message : String(e)}`.slice(0, 160))
         lastError = e
       }
     }
@@ -218,7 +224,7 @@ Deno.serve(async (req) => {
     }
     throw new HttpError(
       503,
-      'I modelli gratuiti di Hugging Face sono occupati o in pausa in questo momento: riprova tra qualche minuto.',
+      `I modelli gratuiti di Hugging Face sono occupati o in pausa in questo momento: riprova tra qualche minuto. (${reasons.join('; ') || 'nessun dettaglio'})`,
     )
   } catch (e) {
     if (e instanceof HttpError) return fail(e.status, e.message)
