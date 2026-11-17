@@ -1,25 +1,24 @@
-import { useState } from 'react'
-import { Check, RotateCcw, Sparkles } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Check, ImagePlus, RotateCcw, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
-import { cn } from '@/lib/utils'
-import type { Garment, PhotoType } from '@/lib/garments'
-import { isOnMeReady, onMeCategory, useOnMeQueue, useOnMeStarter, useSetPhotoType } from './api'
+import { useSignedImage } from '@/features/garments/api'
+import type { Garment } from '@/lib/garments'
+import { isOnMeReady, onMeCategory, useOnMeQueue, useOnMeStarter, useSetFitPhoto } from './api'
 
-const TYPES: { key: PhotoType; label: string }[] = [
-  { key: 'stesa', label: 'Stesa' },
-  { key: 'indossata', label: 'Indossata' },
-]
-
-/** Dettaglio capo → "Su di me": tipo di foto e preparazione (o "Rifai") del capo su di te. */
+/**
+ * Dettaglio capo → "Su di me": foto indossata facoltativa (non si vede nell'armadio, serve a copiare
+ * vestibilità e chiusura) e preparazione (o "Rifai") del capo su di te.
+ */
 export function OnMeGarmentPanel({ garment }: { garment: Garment }) {
   const queue = useOnMeQueue()
   const { bodyPath, start } = useOnMeStarter()
-  const setType = useSetPhotoType()
+  const setFit = useSetFitPhoto()
+  const { data: fitUrl } = useSignedImage(garment.fit_photo_path)
+  const input = useRef<HTMLInputElement>(null)
   const [changed, setChanged] = useState(false)
   if (!onMeCategory(garment.category)) return null
 
-  const type: PhotoType = garment.photo_type ?? 'stesa'
   const ready = isOnMeReady(garment, bodyPath)
   const stale = !ready && !!garment.on_me_path
   const working = queue.current === garment.id
@@ -29,38 +28,58 @@ export function OnMeGarmentPanel({ garment }: { garment: Garment }) {
   if (!bodyPath) status = 'Per vederlo su di te serve una tua foto nel Profilo.'
   else if (working) status = 'Lo preparo su di te: circa un minuto…'
   else if (queued) status = 'In coda per la preparazione.'
-  else if (ready) status = changed ? 'Rifallo per usare il nuovo tipo di foto.' : 'Pronto su di te.'
+  else if (ready) status = changed ? 'Rifallo per usare la nuova foto indossata.' : 'Pronto su di te.'
   else if (stale) status = 'Da rifare: hai cambiato la tua foto.'
   else status = 'Non ancora pronto su di te.'
+
+  const change = (file: Blob | null) =>
+    setFit.mutate({ garment, file }, { onSuccess: () => setChanged(true) })
 
   return (
     <section className="flex flex-col gap-3 rounded-card border border-border p-4" aria-label="Su di me">
       <div className="flex flex-col gap-2">
-        <span className="text-label font-medium text-fg-muted">Foto del capo</span>
-        <div className="grid grid-cols-2 gap-1 rounded-full bg-surface-muted p-1" role="radiogroup" aria-label="Foto del capo">
-          {TYPES.map((t) => (
-            <button
-              key={t.key}
-              type="button"
-              role="radio"
-              aria-checked={type === t.key}
-              disabled={setType.isPending}
-              onClick={() => {
-                if (t.key === type) return
-                setType.mutate({ id: garment.id, photo_type: t.key }, { onSuccess: () => setChanged(true) })
-              }}
-              className={cn('h-9 rounded-full text-caption font-semibold transition-colors', type === t.key ? 'bg-navy text-on-accent' : 'text-fg')}
-            >
-              {t.label}
-            </button>
-          ))}
+        <span className="text-label font-medium text-fg-muted">Foto indossata</span>
+        <div className="flex items-center gap-3">
+          {garment.fit_photo_path ? (
+            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-input bg-garment-bg">
+              {fitUrl ? <img src={fitUrl} alt="Foto indossata" className="h-full w-full object-cover" /> : <Spinner className="size-4 text-accent" />}
+            </div>
+          ) : null}
+          <p className="min-w-0 flex-1 text-caption text-fg-muted">
+            {garment.fit_photo_path
+              ? 'Su di te avrà la vestibilità di questa foto e resterà aperto o chiuso come qui.'
+              : 'Facoltativa: una foto in cui qualcuno porta il capo come piace a te (largo, aperto…). Non compare nell’armadio.'}
+          </p>
         </div>
-        <p className="text-caption text-fg-muted">
-          {type === 'indossata'
-            ? 'Nella foto qualcuno lo porta: su di te avrà la stessa vestibilità e resterà aperto o chiuso come nella foto.'
-            : 'Capo appoggiato o appeso: su di te viene vestito aderente e chiuso.'}
-        </p>
-        {setType.error && <p className="text-caption text-danger">{setType.error.message}</p>}
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            size="md"
+            className="h-9 flex-1 px-3"
+            disabled={setFit.isPending}
+            onClick={() => input.current?.click()}
+          >
+            {setFit.isPending ? <Spinner /> : <ImagePlus className="size-4" aria-hidden />}
+            {garment.fit_photo_path ? 'Cambia' : 'Aggiungi foto indossata'}
+          </Button>
+          {garment.fit_photo_path && (
+            <Button variant="ghost" size="md" className="h-9 px-3 text-danger" disabled={setFit.isPending} onClick={() => change(null)}>
+              Togli
+            </Button>
+          )}
+        </div>
+        <input
+          ref={input}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0]
+            e.target.value = ''
+            if (f) change(f)
+          }}
+        />
+        {setFit.error && <p className="text-caption text-danger">{setFit.error.message}</p>}
       </div>
 
       <div className="flex items-center justify-between gap-3 border-t border-border pt-3">

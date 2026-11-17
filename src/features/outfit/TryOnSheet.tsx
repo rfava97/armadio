@@ -60,11 +60,12 @@ export function TryOnSheet({
     const snapshot = state
     try {
       const [topUrl, bottomUrl] = await Promise.all([
-        top ? garmentImageUrl(top.image_path) : Promise.resolve(undefined),
-        bottom ? garmentImageUrl(bottom.image_path) : Promise.resolve(undefined),
+        // la foto indossata, se c'è, porta vestibilità e chiusura del capo
+        top ? garmentImageUrl(top.fit_photo_path ?? top.image_path) : Promise.resolve(undefined),
+        bottom ? garmentImageUrl(bottom.fit_photo_path ?? bottom.image_path) : Promise.resolve(undefined),
       ])
       const out = await tryOnOutfit(
-        { body: bodyUrl, top: topUrl, bottom: bottomUrl, topWorn: top?.photo_type === 'indossata', bottomWorn: bottom?.photo_type === 'indossata' },
+        { body: bodyUrl, top: topUrl, bottom: bottomUrl, topWorn: !!top?.fit_photo_path, bottomWorn: !!bottom?.fit_photo_path },
         setStep,
       )
       setResult({ url: URL.createObjectURL(out.blob), model: out.model, blob: out.blob, state: snapshot })

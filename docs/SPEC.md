@@ -73,7 +73,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Nel camerino i livelli si sovrappongono alla foto (pantaloni, poi strati del busto dal più interno): lo swipe resta istantaneo.
 - Capi non ancora pronti: non compaiono, la riga in basso propone "Prepara". Dal Profilo si preparano tutti i capi mancanti in coda (uno alla volta, circa un minuto a capo, una decina al giorno con la quota gratuita).
 - Scarpe e accessori non si vedono su di te: restano quelli della foto.
-- **Foto del capo: Stesa | Indossata** (dettaglio capo, colonna `photo_type`, migrazione 004). "Stesa" = capo appoggiato o appeso: il modello lo veste aderente e chiuso. "Indossata" = nella foto qualcuno lo porta: il modello ne copia vestibilità e chiusura (oversize, giacca o camicia aperta). Vale anche per "Provalo su di me" (FASHN `garment_photo_type` flat-lay / model).
+- **Foto indossata** (facoltativa, dettaglio capo → "Su di me", colonna `fit_photo_path`, migrazione 005): nell'armadio resta sempre la foto stesa; questa seconda foto, in cui qualcuno porta il capo (oversize, giacca o camicia aperta…), non compare nell'armadio e serve solo al try-on. Se c'è, "Su di me" e "Provalo su di me" la usano con FASHN `garment_photo_type: model`, che copia vestibilità e chiusura; altrimenti la foto stesa con `flat-lay` (capo aderente e chiuso). Salvata ridotta a 1200 px, non scontornata, nel bucket `garments`.
 - **Rifai su di me**: dal dettaglio capo o dalla riga sotto il palco, rigenera il capo (sostituisce il livello precedente).
 
 **C. "Provalo su di me" (AI, gratis con limiti)**

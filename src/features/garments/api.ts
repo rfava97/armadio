@@ -125,6 +125,7 @@ export function useDeleteGarment() {
       if (error) throw error
       const paths = [g.image_path, thumbPathFor(g.image_path)]
       if (g.original_path) paths.push(g.original_path)
+      if (g.fit_photo_path) paths.push(g.fit_photo_path)
       await supabase.storage.from(BUCKET).remove(paths)
       if (g.on_me_path) await supabase.storage.from('renders').remove([g.on_me_path])
     },

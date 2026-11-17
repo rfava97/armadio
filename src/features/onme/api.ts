@@ -3,7 +3,8 @@ import { useAuth } from '@/auth/context'
 import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
 import { useSyncExternalStore } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Category, Garment, PhotoType } from '@/lib/garments'
+import type { Category, Garment } from '@/lib/garments'
+import { loadBitmap, drawScaled } from '@/lib/image/canvas'
 import { encodeLayer } from '@/lib/image/encode'
 import { makeOnMeLayer, type OnMeCategory } from '@/lib/onMe'
 import { garmentImageUrl } from '@/lib/tryon'
@@ -48,8 +49,8 @@ function friendly(e: unknown): Error {
   if (/on_me_(path|body)/.test(msg)) {
     return new Error('Manca la migrazione 003_su_di_me.sql: eseguila nel SQL Editor di Supabase.')
   }
-  if (/photo_type/.test(msg)) {
-    return new Error('Manca la migrazione 004_tipo_foto.sql: eseguila nel SQL Editor di Supabase.')
+  if (/fit_photo_path/.test(msg)) {
+    return new Error('Manca la migrazione 005_foto_indossata.sql: eseguila nel SQL Editor di Supabase.')
   }
   if ((e as { userFacing?: boolean }).userFacing) return e as Error
   return new Error('Preparazione non riuscita: riprova tra poco.')
@@ -59,7 +60,9 @@ function friendly(e: unknown): Error {
 async function prepareOne(g: Garment, body: { path: string; url: string }, userId: string) {
   const category = onMeCategory(g.category)
   if (!category) throw new Error('Questo capo non si può vedere su di te.')
-  const { layer } = await makeOnMeLayer(body.url, await garmentImageUrl(g.image_path), category, g.photo_type === 'indossata')
+  // con la foto indossata il modello copia vestibilità e chiusura; altrimenti usa la foto stesa
+  const worn = !!g.fit_photo_path
+  const { layer } = await makeOnMeLayer(body.url, await garmentImageUrl(g.fit_photo_path ?? g.image_path), category, worn)
   const blob = await encodeLayer(layer)
   const path = `${userId}/onme/${g.id}-${Date.now()}.webp`
   const store = supabase.storage.from(BUCKET)
@@ -166,13 +169,31 @@ export function useOnMeStarter() {
   return { bodyPath, start }
 }
 
-/** Tipo di foto del capo (stesa / indossata). */
-export function useSetPhotoType() {
+/**
+ * Foto indossata del capo (o null per toglierla): ridotta a 1200 px, senza scontornare (al modello
+ * serve la persona che lo porta), nel bucket garments accanto alla foto del capo.
+ */
+export function useSetFitPhoto() {
   const qc = useQueryClient()
+  const { session } = useAuth()
   return useMutation({
-    mutationFn: async ({ id, photo_type }: { id: string; photo_type: PhotoType }) => {
-      const { error } = await supabase.from('garments').update({ photo_type }).eq('id', id)
-      if (error) throw new Error(friendlyError(error))
+    mutationFn: async ({ garment, file }: { garment: Garment; file: Blob | null }) => {
+      const store = supabase.storage.from('garments')
+      let path: string | null = null
+      if (file) {
+        const bmp = await loadBitmap(file)
+        const blob = await encodeLayer(drawScaled(bmp, 1200))
+        bmp.close()
+        path = `${session!.user.id}/${garment.id}_indossata-${Date.now()}.webp`
+        const up = await store.upload(path, blob, { contentType: 'image/webp', upsert: false })
+        if (up.error) throw up.error
+      }
+      const { error } = await supabase.from('garments').update({ fit_photo_path: path }).eq('id', garment.id)
+      if (error) {
+        if (path) await store.remove([path])
+        throw new Error(friendlyError(error))
+      }
+      if (garment.fit_photo_path) await store.remove([garment.fit_photo_path])
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['garments'] }),
   })
