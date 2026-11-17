@@ -11,6 +11,7 @@ import { BodyPhotoSheet, CalibrateSheet } from '@/features/profile/BodyPhotoShee
 import { AnchorEditor } from '@/features/profile/AnchorEditor'
 import { FavoritesSection } from '@/features/outfits/FavoritesSection'
 import { CamerinoSettingsCard } from '@/features/outfit/CamerinoSettingsCard'
+import { OnMeCard } from '@/features/onme/OnMeCard'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/auth/context'
 import { Button } from '@/components/ui/button'
@@ -258,7 +259,10 @@ export default function Profilo() {
       <FavoritesSection />
 
       <SectionTitle>Camerino</SectionTitle>
-      <CamerinoSettingsCard />
+      <div className="flex flex-col gap-3">
+        <OnMeCard />
+        <CamerinoSettingsCard />
+      </div>
 
       <SectionTitle>Account</SectionTitle>
       <p className="text-fg-muted">

@@ -22,17 +22,6 @@ export type Outfit = {
   tucked?: string[]
 }
 
-/** Si possono infilare nei pantaloni solo i capi interni. */
-export const TUCKABLE: Category[] = ['maglie', 'camicie', 'canotte']
-
-export function toggleTuck(s: CamerinoState, id: string): CamerinoState {
-  const tucked = s.outfit.tucked ?? []
-  return {
-    ...s,
-    outfit: { ...s.outfit, tucked: tucked.includes(id) ? tucked.filter((x) => x !== id) : [...tucked, id] },
-  }
-}
-
 export type Active = { zone: StageZone; layer: number }
 
 export type CamerinoState = { outfit: Outfit; active: Active }

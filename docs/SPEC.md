@@ -45,36 +45,33 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 ## 2. Outfit / Camerino (`/outfit`)
 
 ### 2.1 Layout
-- Header: "Crea il tuo outfit", a destra pill con icona lente (cerca capo) e cuore (salva).
-- Indicatori strati in alto, solo per la zona busto: `Strato 1: <nome capo>` · `Strato 2: –` con X per rimuovere; lo strato attivo ha sottolineatura accent.
-- Centro: **avatar** a figura intera (manichino o foto, vedi 2.3) con i capi sovrapposti.
-- Ai lati dell'avatar si intravedono il capo precedente e successivo della zona attiva (carosello, effetto peek ~15% a sinistra e destra), come nel riferimento.
-- Hint in basso, piccolo, grigio: "Tieni premuto per aggiungere uno strato".
+- Header: "Crea il tuo outfit", a destra pill con lente (cerca capo), scintille ("Provalo su di me", 2.3 C) e mescola.
+- Indicatori strati in alto, solo per la zona busto: `Strato 1: <nome capo>` · `Strato 2: –` con X per rimuovere; lo strato attivo ha sottolineatura accent. Pulsante "+ Strato".
+- Sotto: chip delle zone (Busto, Gambe, Piedi) e, a destra, la scelta della vista **Tavolo | Su di me** (ricordata sul dispositivo).
+- Centro: il palco, in una delle due viste (2.3). Ai lati si intravedono il capo precedente e successivo della zona attiva (peek ~16%).
+- Riga in basso: suggerimento sul tavolo; "su di me" lo stato dei capi (pronto, da preparare, in preparazione) con il pulsante "Prepara".
 
 ### 2.2 Interazioni
-- **Zone**: `busto` (strati), `gambe`, `piedi`. Tap su una zona dell'avatar la rende attiva (bordo/alone leggero).
-- **Swipe orizzontale** sull'avatar: scorre i capi della zona attiva, filtrati per categorie compatibili:
+- **Zone**: `busto` (strati), `gambe`, `piedi`. Tap su una zona del palco la rende attiva (alone leggero).
+- **Swipe orizzontale** sul palco: scorre i capi della zona attiva, filtrati per categorie compatibili:
   - busto → Maglie, Camicie, Canotte, Felpe e Maglioni, Giacche e Cappotti
   - gambe → Pantaloni, Jeans
   - piedi → Scarpe
-- **Long-press (500 ms) sul busto** → aggiunge un nuovo strato sopra (es. Henley + felpa), con feedback: anello che si riempie durante la pressione + vibrazione (`navigator.vibrate` dove disponibile). Lo swipe agisce poi sul nuovo strato.
-- Pulsante visibile **"+ Strato"** accanto agli indicatori (alternativa al long-press, per la scopribilità).
-- Max 3 strati sul busto. Ordine z: canotta/maglia < camicia < felpa/maglione < giacca/cappotto (default; l'utente può invertire con drag sugli indicatori in una fase successiva).
+- Max 3 strati sul busto. Ordine z: canotta/maglia < camicia < felpa/maglione < giacca/cappotto.
 - Tap su "Strato N" → rende attivo quello strato; X → rimuove.
 - Pulsante "Mescola" (icona shuffle) → combinazione casuale.
 
-### 2.3 Avatar — due modalità
-**A. Manichino (default, tempo reale)**
-- Figura SVG parametrica neutra (grigio chiaro, stile manichino bianco), generata dalle misure del Profilo: altezza, peso, spalle, petto, vita, fianchi, lunghezza gambe, forma del corpo (femminile ↔ maschile).
-- Valori iniziali: altezza 174 cm, vita 78 cm, fianchi 93 cm; gli altri da stimare e da far correggere all'utente.
-- Il manichino espone **punti di ancoraggio**: collo, spalle sx/dx, vita, fianchi, ginocchia, caviglie.
-- Ogni capo viene posizionato e scalato in base alla sua zona: un capo del busto si allinea collo → spalle (larghezza = distanza spalle × fattore vestibilità); i pantaloni si allineano vita → caviglie; le scarpe ai piedi.
-- **Vestibilità per capo**: nel dettaglio capo, "Regola sul manichino" permette pinch/drag per scalare e spostare; i valori (`fit_scale`, `fit_offset_x`, `fit_offset_y`) vengono salvati sul capo e riusati.
+### 2.3 Viste del camerino
+**A. Tavolo (default)**
+- I capi scelti, stesi come un outfit su un tavolo: busto in alto, pantaloni sotto, scarpe in fondo, con un'ombra morbida. Gli strati interni del busto spuntano dietro quello esterno.
+- Funziona sempre, anche senza foto e senza connessione all'AI.
 
-**B. La tua foto (sovrapposizione)**
-- L'utente carica una foto a figura intera (frontale, braccia leggermente aperte, sfondo neutro). Scontornata come i capi.
-- Calibrazione una tantum: l'utente trascina 7 marcatori (collo, spalle, vita, fianchi, caviglie) sulla foto. Questi diventano gli ancoraggi.
-- I capi si sovrappongono come nel manichino (resa 2D approssimata).
+**B. Su di me**
+- La tua foto a figura intera (Profilo → Avatar in uso) con i capi indossati.
+- Ogni maglia e pantalone viene "fotografato su di te" **una volta sola** con il try-on di Hugging Face (2.3 C): dal confronto tra la foto inviata e quella generata si ritaglia il capo (con le braccia ridisegnate) come livello WebP trasparente, salvato nel bucket privato `renders` (`<user_id>/onme/…`). Sul capo: `on_me_path` e `on_me_body` (la foto del corpo usata; se cambi foto, il capo va rifatto).
+- Nel camerino i livelli si sovrappongono alla foto (pantaloni, poi strati del busto dal più interno): lo swipe resta istantaneo.
+- Capi non ancora pronti: non compaiono, la riga in basso propone "Prepara". Dal Profilo si preparano tutti i capi mancanti in coda (uno alla volta, circa un minuto a capo, una decina al giorno con la quota gratuita).
+- Scarpe e accessori non si vedono su di te: restano quelli della foto.
 
 **C. "Provalo su di me" (AI, gratis con limiti)**
 - Pulsante con le scintille nell'header del camerino: genera una foto realistica dell'outfit sulla foto del corpo.
@@ -82,7 +79,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Prima lo strato più esterno del busto, poi i pantaloni sulla foto già vestita (due generazioni).
 - Quota gratuita: pochi minuti di GPU al giorno (circa 5 con un account HF gratuito, meno senza). 20–60 s per generazione.
 - Privacy: foto del corpo e dei capi vengono inviate a Hugging Face; l'interfaccia lo dice prima di generare.
-- Il risultato si può salvare come immagine; il salvataggio negli outfit è della Fase 5.
+- Il risultato si può salvare come immagine e nei preferiti.
 
 ### 2.4 Salva outfit (bottom sheet "Salva nei tuoi preferiti")
 - Anteprima dell'outfit (snapshot PNG del canvas avatar, generato client-side).

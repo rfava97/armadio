@@ -2,7 +2,6 @@
  * Manichino parametrico (SPEC 2.3 A): geometria in centimetri, vista frontale.
  * Tutto è calcolato qui, il componente React disegna soltanto.
  */
-import type { Skeleton } from './skeleton'
 
 export type Measures = {
   body_shape: number // 0 femminile … 100 maschile
@@ -77,10 +76,6 @@ export type MannequinShape = {
   anchors: Anchors
   /** riquadro che contiene la figura, in coordinate 0..1 di VIEW (per adattare gli ancoraggi a una foto ritagliata) */
   bounds: { x: number; y: number; w: number; h: number }
-  /** larghezza del corpo ai fianchi, in frazione della larghezza di VIEW */
-  hipWidth: number
-  /** articolazioni (gomiti, polsi, anche, ginocchia…) in coordinate 0..1 di VIEW */
-  skeleton: Skeleton
 }
 
 type P = [number, number]
@@ -241,29 +236,6 @@ export function buildMannequin(input: Measures): MannequinShape {
     floor: { cx: 0, cy: GROUND, rx: Math.max(hipHalf, ankleX + 6) * 1.5, ry: 2.2 },
     anchors,
     bounds,
-    hipWidth: (2 * hipHalf) / VIEW.w,
-    skeleton: (() => {
-      const n = ([x, yy]: P) => ({ x: nx(x), y: ny(yy) })
-      const elbow = rot([0, armLen * 0.47])
-      const wrist = rot([0, armLen])
-      const yHipJoint = yHip + (yCrotch - yHip) * 0.6
-      return {
-        neck: anchors.neck,
-        shoulderL: anchors.shoulder_l,
-        shoulderR: anchors.shoulder_r,
-        elbowL: n([-elbow[0], elbow[1]]),
-        elbowR: n(elbow),
-        wristL: n([-wrist[0], wrist[1]]),
-        wristR: n(wrist),
-        waist: anchors.waist,
-        hipL: n([-hipHalf * 0.5, yHipJoint]),
-        hipR: n([hipHalf * 0.5, yHipJoint]),
-        kneeL: n([-kneeX, yKnee]),
-        kneeR: n([kneeX, yKnee]),
-        ankleL: anchors.ankle_l,
-        ankleR: anchors.ankle_r,
-      }
-    })(),
   }
 }
 

@@ -63,3 +63,8 @@ export async function encodeRender(src: Blob): Promise<Blob> {
   bmp.close()
   return toWebp(drawScaled(c, 1400), 0.85)
 }
+
+/** Livello "Su di me" (capo ritagliato dalla foto generata): WebP con trasparenza. */
+export async function encodeLayer(src: HTMLCanvasElement): Promise<Blob> {
+  return toWebp(drawScaled(src, 1400), 0.85)
+}

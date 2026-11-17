@@ -1,105 +1,56 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'framer-motion'
 import { useGesture } from '@use-gesture/react'
-import { Mannequin } from '@/components/Mannequin'
-import type { Anchors, Measures } from '@/lib/mannequin'
-import type { GarmentWithThumb, Fit } from '@/features/garments/api'
-import { dressGarment, type Dressed } from '@/lib/image/dress'
-import { tuckLine } from './placement'
-import { layoutGarment, type GarmentLayout, type Rect, type SkeletonPx } from './render'
-import type { Skeleton } from '@/lib/skeleton'
-import { getActiveId, MAX_LAYERS, neighbor, type CamerinoState, type StageZone } from './state'
+import type { GarmentWithThumb } from '@/features/garments/api'
+import { ON_ME_PAD } from '@/lib/onMe'
+import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
 
-/** hipWidth: larghezza del corpo ai fianchi in frazione della larghezza dell'avatar */
-export type AvatarSource =
-  | { kind: 'mannequin'; measures: Measures; anchors: Anchors; skeleton: Skeleton; aspect: number; hipWidth: number }
-  | { kind: 'photo'; url: string; anchors: Anchors; skeleton: Skeleton; aspect: number; hipWidth: number }
+type Box = { left: number; top: number; width: number; height: number }
 
-/** Un capo disegnato sul corpo: canvas grande quanto l'avatar (nitido sugli schermi retina). */
-function GarmentCanvas({ layout, w, h, alt }: { layout: GarmentLayout; w: number; h: number; alt: string }) {
-  const ref = useRef<HTMLCanvasElement>(null)
-  useLayoutEffect(() => {
-    const c = ref.current
-    if (!c) return
-    const dpr = Math.min(2, window.devicePixelRatio || 1)
-    c.width = Math.round(w * dpr)
-    c.height = Math.round(h * dpr)
-    const ctx = c.getContext('2d')
-    if (!ctx) return
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    ctx.clearRect(0, 0, w, h)
-    layoutGarment(layout, ctx)
-  })
-  return <canvas ref={ref} role="img" aria-label={alt} className="pointer-events-none block" style={{ width: w, height: h }} />
+/** Vista "Su di me": la tua foto e i livelli dei capi già preparati. */
+export type OnMeSource = {
+  url: string
+  aspect: number
+  /** confini busto/gambe e gambe/piedi, in frazione dell'altezza della foto */
+  split: [number, number]
+  /** id del capo → URL del livello */
+  layers: Map<string, string>
 }
 
 type Props = {
   garments: GarmentWithThumb[]
   state: CamerinoState
-  avatar: AvatarSource
-  /** vestibilità in modifica per il capo attivo (modalità "Regola") */
-  adjust: Fit | null
-  onAdjust: (f: Fit) => void
+  /** se presente, vista "Su di me"; altrimenti il tavolo con i capi stesi */
+  onMe: OnMeSource | null
   onSelectZone: (zone: StageZone) => void
   onStep: (dir: 1 | -1) => void
-  onAddLayer: () => void
 }
 
-const LONG_PRESS_MS = 500
-const MOVE_TOLERANCE = 10
-const PEEK = 0.17 // quota di schermo dove arriva il capo che si intravede ai lati
-// ombra morbida sotto i capi: danno profondità e separano gli strati
-const SHADOW = 'drop-shadow(0 2px 3px rgba(11, 31, 68, 0.28))'
-
-/** Zona dell'avatar sotto il dito (y in 0..1 dell'avatar). */
-function zoneAt(y: number, a: Anchors): StageZone {
-  if (y < (a.waist.y + a.hips.y) / 2) return 'busto'
-  if (y < (a.ankle_l.y + a.ankle_r.y) / 2 - 0.025) return 'gambe'
-  return 'piedi'
+/** Sul tavolo: dove stanno i capi di ogni zona (frazioni del palco), come un outfit steso. */
+const TABLE: Record<StageZone, { x: number; y: number; w: number; h: number }> = {
+  busto: { x: 0.14, y: 0.0, w: 0.72, h: 0.46 },
+  gambe: { x: 0.24, y: 0.4, w: 0.52, h: 0.46 },
+  piedi: { x: 0.28, y: 0.84, w: 0.44, h: 0.16 },
 }
+const PEEK = 0.16 // quota di schermo occupata dal capo che si intravede ai lati
+const SHADOW = 'drop-shadow(0 3px 6px rgba(11, 31, 68, 0.22))'
+
+type Item = { key: string; g: GarmentWithThumb; zone: StageZone; layer: number; box: Box; z: number; src: string; top?: boolean }
 
 /**
- * Ritaglio di testa e collo (clip-path in % dell'avatar): la testa (larga circa quanto lei, così
- * cappucci e colletti alti restano visibili ai lati) e il collo fino a poco sopra la sua base,
- * chiuso da una curva come uno scollo. Il colletto della maglia copre la base del collo.
+ * Il palco del camerino. Swipe orizzontale: capo precedente/successivo della zona attiva.
+ * Tocco: sceglie la zona. Sul tavolo i capi sono le loro foto; "su di me" sono i livelli generati.
  */
-function headClip(a: Anchors, w: number, h: number): string {
-  const sd = Math.hypot((a.shoulder_r.x - a.shoulder_l.x) * w, (a.shoulder_r.y - a.shoulder_l.y) * h)
-  const nx = a.neck.x * w
-  const ny = a.neck.y * h
-  const head = sd * 0.42
-  const half = sd * 0.13 // mezza larghezza del collo
-  const chin = ny - sd * 0.32
-  const pts: [number, number][] = [
-    [nx - head, 0],
-    [nx + head, 0],
-    [nx + head, chin],
-    [nx + half, chin + sd * 0.04],
-    [nx + half, ny - sd * 0.07],
-    [nx + half * 0.6, ny - sd * 0.03],
-    [nx, ny - sd * 0.015],
-    [nx - half * 0.6, ny - sd * 0.03],
-    [nx - half, ny - sd * 0.07],
-    [nx - half, chin + sd * 0.04],
-    [nx - head, chin],
-  ]
-  return `polygon(${pts.map(([x, y]) => `${((x / w) * 100).toFixed(2)}% ${((y / h) * 100).toFixed(2)}%`).join(', ')})`
-}
-
-export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer }: Props) {
+export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
-  const [dressed, setDressed] = useState<Record<string, Dressed>>({})
-  const [ring, setRing] = useState<{ x: number; y: number } | null>(null)
   const dragX = useMotionValue(0)
   const [dir, setDir] = useState<1 | -1>(1)
-  const press = useRef<{ x: number; y: number; timer: number; fired: boolean } | null>(null)
   const reduce = useReducedMotion()
 
   useLayoutEffect(() => {
     const el = stage.current
     if (!el) return
-    // misura subito, senza aspettare il primo giro del ResizeObserver
     const r = el.getBoundingClientRect()
     setSize({ w: r.width, h: r.height })
     const ro = new ResizeObserver(([e]) => setSize({ w: e.contentRect.width, h: e.contentRect.height }))
@@ -107,139 +58,56 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
     return () => ro.disconnect()
   }, [])
 
-  // riquadro dell'avatar: alto quanto il palco, centrato, appoggiato in basso
-  const av = useMemo(() => {
-    let h = size.h
-    let w = h * avatar.aspect
-    if (w > size.w * 0.62) {
-      w = size.w * 0.62
-      h = w / avatar.aspect
-    }
-    return { left: (size.w - w) / 2, top: size.h - h, w, h }
-  }, [size, avatar.aspect])
-
   const byId = useMemo(() => new Map(garments.map((g) => [g.id, g])), [garments])
   const activeId = getActiveId(state)
   const { zone: activeZone, layer: activeLayer } = state.active
 
-  const sk = useMemo(() => {
-    const out = {} as SkeletonPx
-    for (const [k, p] of Object.entries(avatar.skeleton) as [keyof Skeleton, { x: number; y: number }][]) {
-      out[k] = { x: p.x * av.w, y: p.y * av.h }
+  // la foto: alta quanto il palco, centrata, appoggiata in basso
+  const av = useMemo<Box>(() => {
+    if (!onMe) return { left: 0, top: 0, width: size.w, height: size.h }
+    let h = size.h
+    let w = h * onMe.aspect
+    if (w > size.w * 0.7) {
+      w = size.w * 0.7
+      h = w / onMe.aspect
     }
-    return out
-  }, [avatar.skeleton, av.w, av.h])
+    return { left: (size.w - w) / 2, top: size.h - h, width: w, height: h }
+  }, [size, onMe])
 
-  /** Come va disegnato un capo sul corpo, e il riquadro che occupa (px del palco). */
-  const layoutFor = (g: GarmentWithThumb, zone: StageZone, fit?: Fit | null, tucked = false): { layout: GarmentLayout; rect: Rect } | null => {
-    const d = dressed[g.id]
-    if (!d || av.w === 0) return null
-    const f = fit ?? g
-    const layout: GarmentLayout = {
-      d,
-      category: g.category,
-      zone,
-      fit: { scale: Number(f.fit_scale) || 1, ox: Number(f.fit_offset_x) || 0, oy: Number(f.fit_offset_y) || 0 },
-      sk,
-      hipWidth: avatar.hipWidth * av.w,
-      tuckY: tucked ? tuckLine(avatar.anchors, av.h) : undefined,
+  /** Riquadro di una zona sul tavolo, o fascia del corpo "su di me". */
+  const zoneBox = (z: StageZone): Box => {
+    if (onMe) {
+      const [a, b] = onMe.split
+      const y0 = z === 'busto' ? 0.08 : z === 'gambe' ? a : b
+      const y1 = z === 'busto' ? a : z === 'gambe' ? b : 1
+      return { left: av.left, top: av.top + y0 * av.height, width: av.width, height: (y1 - y0) * av.height }
     }
-    const r = layoutGarment(layout)
-    return { layout, rect: { ...r, left: r.left + av.left, top: r.top + av.top } }
+    const t = TABLE[z]
+    return { left: t.x * size.w, top: t.y * size.h, width: t.w * size.w, height: t.h * size.h }
   }
 
-  // capi indossati, con il loro ordine z (gambe < scarpe < busto per rango e strato)
-  const worn: { g: GarmentWithThumb; zone: StageZone; z: number; layer: number }[] = []
-  const gambe = state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined
-  if (gambe) worn.push({ g: gambe, zone: 'gambe', z: 10, layer: 0 })
-  const piedi = state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined
-  if (piedi) worn.push({ g: piedi, zone: 'piedi', z: 20, layer: 0 })
-  state.outfit.busto.forEach((id, i) => {
-    const g = id ? byId.get(id) : undefined
-    if (g) worn.push({ g, zone: 'busto', z: 30 + g.layer_rank * MAX_LAYERS + i, layer: i })
-  })
-
-  // capi da preparare: indossati e quelli che si intravedono ai lati
-  const needed = [...worn.map((w) => w.g), ...[neighbor(state, garments, -1), neighbor(state, garments, 1)].map((id) => (id ? byId.get(id) : undefined))]
-    .filter((g): g is GarmentWithThumb => !!g && !!g.thumbUrl && !dressed[g.id])
-  const neededKey = needed.map((g) => g.id).join(',')
-  useEffect(() => {
-    let cancelled = false
-    for (const g of needed) {
-      dressGarment(g.image_path, g.thumbUrl!, g.category)
-        .then((dg) => !cancelled && setDressed((m) => ({ ...m, [g.id]: dg })))
-        .catch((e) => console.warn('Capo non preparato', g.name, e))
+  const zoneAt = (y: number): StageZone => {
+    if (onMe) {
+      const f = (y - av.top) / av.height
+      return f < onMe.split[0] ? 'busto' : f < onMe.split[1] ? 'gambe' : 'piedi'
     }
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- dipende solo dall'elenco dei capi mancanti
-  }, [neededKey])
+    const f = y / size.h
+    return f < 0.43 ? 'busto' : f < 0.85 ? 'gambe' : 'piedi'
+  }
 
-  const isActive = (w: { zone: StageZone; layer: number }) =>
-    w.zone === activeZone && (activeZone !== 'busto' || w.layer === activeLayer)
-
-  const prevId = adjust ? null : neighbor(state, garments, -1)
-  const nextId = adjust ? null : neighbor(state, garments, 1)
-
+  const prevId = neighbor(state, garments, -1)
+  const nextId = neighbor(state, garments, 1)
   const step = (d: 1 | -1) => {
     setDir(d)
     onStep(d)
   }
 
-  // pressione lunga sul busto → nuovo strato (anello che si riempie, vibrazione)
-  const cancelPress = () => {
-    if (press.current) window.clearTimeout(press.current.timer)
-    press.current = null
-    setRing(null)
-  }
-  const onPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
-    if (adjust || state.outfit.busto.length >= MAX_LAYERS) return
-    const r = stage.current!.getBoundingClientRect()
-    const x = e.clientX - r.left
-    const y = e.clientY - r.top
-    if (zoneAt((y - av.top) / av.h, avatar.anchors) !== 'busto') return
-    const timer = window.setTimeout(() => {
-      if (!press.current) return
-      press.current.fired = true
-      setRing(null)
-      navigator.vibrate?.(15)
-      setDir(1)
-      onAddLayer()
-    }, LONG_PRESS_MS)
-    press.current = { x: e.clientX, y: e.clientY, timer, fired: false }
-    setRing({ x, y })
-  }
-  const onPointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const p = press.current
-    if (p && !p.fired && Math.hypot(e.clientX - p.x, e.clientY - p.y) > MOVE_TOLERANCE) cancelPress()
-  }
-  useEffect(() => () => cancelPress(), [])
-
-  const adjustStart = useRef<Fit | null>(null)
-  const activeWorn = worn.find(isActive)
-  const activeBox = activeWorn ? (layoutFor(activeWorn.g, activeWorn.zone, adjust)?.rect ?? null) : null
-
   const bind = useGesture(
     {
-      onDrag: ({ movement: [mx, my], last, tap, first, event, velocity: [vx] }) => {
+      onDrag: ({ movement: [mx], last, tap, event, velocity: [vx] }) => {
         if (tap) {
-          // un tocco breve sceglie la zona (la pressione lunga è gestita a parte)
-          if (press.current?.fired) return
           const r = stage.current!.getBoundingClientRect()
-          const pe = event as PointerEvent
-          onSelectZone(zoneAt((pe.clientY - r.top - av.top) / av.h, avatar.anchors))
-          return
-        }
-        if (press.current?.fired) return
-        if (adjust && activeBox) {
-          if (first) adjustStart.current = adjust
-          const s = adjustStart.current ?? adjust
-          onAdjust({
-            ...s,
-            fit_offset_x: s.fit_offset_x + mx / activeBox.width,
-            fit_offset_y: s.fit_offset_y + my / activeBox.height,
-          })
+          onSelectZone(zoneAt((event as PointerEvent).clientY - r.top))
           return
         }
         dragX.set(mx)
@@ -254,191 +122,146 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
           }
         }
       },
-      onPinch: ({ offset: [scale], first, memo }) => {
-        if (!adjust) return memo
-        const base = first ? adjust.fit_scale : (memo as number)
-        onAdjust({ ...adjust, fit_scale: Math.min(2, Math.max(0.5, base * scale)) })
-        return base
-      },
     },
-    {
-      drag: { filterTaps: true },
-      pinch: { scaleBounds: { min: 0.5, max: 2 }, from: () => [1, 0] },
-    },
+    { drag: { filterTaps: true, axis: 'x' } },
   )
-  const handlers = bind()
 
-  const variants = reduce
-    ? { enter: { opacity: 0 }, center: { opacity: 1 }, exit: { opacity: 0 } }
-    : {
-        enter: (d: number) => ({ x: d * 70, opacity: 0, scale: 0.92 }),
-        center: { x: 0, opacity: 1, scale: 1 },
-        exit: (d: number) => ({ x: d * -70, opacity: 0, scale: 0.92 }),
+  // sulla foto i capi cambiano in dissolvenza; sul tavolo scorrono di lato
+  const slide =
+    reduce || onMe
+      ? { enter: { opacity: 0 }, center: { opacity: 1 }, exit: { opacity: 0 } }
+      : {
+          enter: (d: number) => ({ x: d * 70, opacity: 0, scale: 0.94 }),
+          center: { x: 0, opacity: 1, scale: 1 },
+          exit: (d: number) => ({ x: d * -70, opacity: 0, scale: 0.94 }),
+        }
+
+  // ---- capi visibili, con riquadro e ordine ----
+  const items: Item[] = []
+  const busto = state.outfit.busto
+    .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
+    .filter((x): x is { g: GarmentWithThumb; i: number } => !!x.g)
+    .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
+  const gambe = state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined
+  const piedi = state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined
+
+  if (onMe) {
+    // il livello copre la foto allargata del margine usato nella generazione
+    const pad = ON_ME_PAD * Math.max(av.width, av.height)
+    const box = { left: av.left - pad, top: av.top - pad, width: av.width + pad * 2, height: av.height + pad * 2 }
+    // pantaloni sotto, poi gli strati del busto dal più interno; le scarpe restano quelle della foto
+    const gl = gambe && onMe.layers.get(gambe.id)
+    if (gambe && gl) items.push({ key: 'gambe', g: gambe, zone: 'gambe', layer: 0, box, z: 10, src: gl })
+    busto.forEach(({ g, i }, n) => {
+      const src = onMe.layers.get(g.id)
+      if (src) items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src })
+    })
+  } else {
+    if (gambe?.thumbUrl) items.push({ key: 'gambe', g: gambe, zone: 'gambe', layer: 0, box: zoneBox('gambe'), z: 10, src: gambe.thumbUrl, top: true })
+    if (piedi?.thumbUrl) items.push({ key: 'piedi', g: piedi, zone: 'piedi', layer: 0, box: zoneBox('piedi'), z: 15, src: piedi.thumbUrl })
+    // strati del busto: i più interni spuntano in alto a sinistra, come capi sovrapposti sul tavolo
+    const b = zoneBox('busto')
+    busto.forEach(({ g, i }, n) => {
+      if (!g.thumbUrl) return
+      const depth = busto.length - 1 - n
+      const k = 1 - depth * 0.1
+      const box = {
+        left: b.left + (b.width * (1 - k)) / 2 - depth * b.width * 0.12,
+        top: b.top + (b.height * (1 - k)) / 2 - depth * b.height * 0.05,
+        width: b.width * k,
+        height: b.height * k,
       }
+      items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src: g.thumbUrl })
+    })
+  }
 
-  const zoneBand = (() => {
-    const a = avatar.anchors
-    const y0 = activeZone === 'busto' ? a.neck.y - 0.03 : activeZone === 'gambe' ? (a.waist.y + a.hips.y) / 2 : (a.ankle_l.y + a.ankle_r.y) / 2 - 0.025
-    const y1 = activeZone === 'busto' ? (a.waist.y + a.hips.y) / 2 : activeZone === 'gambe' ? (a.ankle_l.y + a.ankle_r.y) / 2 - 0.025 : 1
-    // largo quanto la figura (dalle spalle), non quanto il riquadro dell'avatar
-    const half = Math.abs(a.shoulder_r.x - a.shoulder_l.x) * 0.95
-    const cx = (a.shoulder_l.x + a.shoulder_r.x) / 2
-    return { top: av.top + y0 * av.h, height: (y1 - y0) * av.h, left: av.left + (cx - half) * av.w, width: 2 * half * av.w }
-  })()
+  const isActive = (it: Item) => it.zone === activeZone && (activeZone !== 'busto' || it.layer === activeLayer)
+
+  const picture = (src: string, alt: string, top?: boolean): ReactNode => (
+    <img src={src} alt={alt} draggable={false} className={top ? 'h-full w-full object-contain object-top' : 'h-full w-full object-contain'} />
+  )
 
   const peek = (id: string | null, side: 'left' | 'right') => {
     if (!id || id === activeId) return null
     const g = byId.get(id)
-    if (!g || !activeWorn) return null
-    const l = layoutFor(g, activeZone)
-    if (!l) return null
-    const b = l.rect
-    // sposto il capo di lato: se ne vede solo un pezzo, al bordo del palco
-    const dx = side === 'left' ? size.w * PEEK - (b.left + b.width) : size.w * (1 - PEEK) - b.left
+    if (!g?.thumbUrl) return null
+    const zb = zoneBox(activeZone)
+    const w = Math.min(zb.width, size.w * 0.5)
+    const left = side === 'left' ? size.w * PEEK - w : size.w * (1 - PEEK)
     return (
-      <div key={`peek-${side}`} className="pointer-events-none absolute z-[60] opacity-45" style={{ left: av.left + dx, top: av.top }}>
-        <GarmentCanvas layout={l.layout} w={av.w} h={av.h} alt="" />
-        <button
-          type="button"
-          aria-label={`${side === 'left' ? 'Capo precedente' : 'Capo successivo'}: ${g.name}`}
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={() => step(side === 'left' ? -1 : 1)}
-          className="pointer-events-auto absolute"
-          style={{ left: b.left - av.left, top: b.top - av.top, width: b.width, height: b.height }}
-        />
-      </div>
+      <button
+        key={`peek-${side}`}
+        type="button"
+        aria-label={`${side === 'left' ? 'Capo precedente' : 'Capo successivo'}: ${g.name}`}
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => step(side === 'left' ? -1 : 1)}
+        className="absolute z-[40] opacity-40"
+        style={{ left, top: zb.top, width: w, height: zb.height }}
+      >
+        {picture(g.thumbUrl, '')}
+      </button>
     )
   }
 
   return (
     <div
       ref={stage}
-      // le immagini non reagiscono al tocco: niente menu "salva immagine", niente selezione.
-      // isolate: i livelli interni (testa, anteprime) restano sotto i fogli che si aprono sopra
-      className="relative isolate h-full w-full touch-none overflow-hidden select-none [-webkit-touch-callout:none] [&_img]:pointer-events-none [&_img]:select-none"
-      {...handlers}
-      onPointerDown={(e) => {
-        handlers.onPointerDown?.(e)
-        onPointerDown(e)
-      }}
-      onPointerMove={(e) => {
-        handlers.onPointerMove?.(e)
-        onPointerMove(e)
-      }}
-      onPointerUp={(e) => {
-        handlers.onPointerUp?.(e)
-        cancelPress()
-      }}
-      onPointerCancel={(e) => {
-        handlers.onPointerCancel?.(e)
-        cancelPress()
-      }}
+      // isolate: i livelli interni restano sotto i fogli che si aprono sopra.
+      // Le immagini non reagiscono al tocco: niente menu "salva immagine", niente selezione.
+      className="relative isolate h-full w-full touch-pan-y overflow-hidden select-none [-webkit-touch-callout:none] [&_img]:pointer-events-none [&_img]:select-none"
+      {...bind()}
     >
-      {/* quando cambia zona, un alone breve la indica e poi sparisce */}
-      {av.w > 0 && !adjust && (
-        <motion.div
-          key={activeZone}
-          aria-hidden
-          className="pointer-events-none absolute rounded-[28px] bg-accent/10"
-          style={zoneBand}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: [0, 1, 0] }}
-          transition={{ duration: 0.9, times: [0, 0.25, 1] }}
-        />
-      )}
-
-      {/* avatar */}
-      <div className="absolute" style={{ left: av.left, top: av.top, width: av.w, height: av.h }}>
-        {avatar.kind === 'mannequin' ? (
-          <Mannequin measures={avatar.measures} className="h-full w-full" />
-        ) : (
-          <img src={avatar.url} alt="La tua foto" className="h-full w-full" draggable={false} />
-        )}
-      </div>
-
-      {worn.map((w) => {
-        const active = isActive(w)
-        const tucked = w.zone === 'busto' && !!state.outfit.gambe && (state.outfit.tucked ?? []).includes(w.g.id)
-        const l = layoutFor(w.g, w.zone, active ? adjust : null, tucked)
-        if (!l) return null
-        const canvas = <GarmentCanvas layout={l.layout} w={av.w} h={av.h} alt={w.g.name} />
-        const pos = { left: av.left, top: av.top, width: av.w, height: av.h, zIndex: w.z, filter: SHADOW }
-        if (!active) {
-          return (
-            <div key={w.g.id + w.zone + w.layer} className="pointer-events-none absolute" style={pos}>
-              {canvas}
-            </div>
-          )
-        }
-        return (
-          <motion.div key={`active-${w.zone}-${w.layer}`} className="pointer-events-none absolute" style={{ ...pos, x: dragX }}>
-            <AnimatePresence custom={dir} initial={false} mode="popLayout">
-              <motion.div
-                key={w.g.id}
-                custom={dir}
-                variants={variants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className="h-full w-full"
-              >
-                {canvas}
-              </motion.div>
-            </AnimatePresence>
-          </motion.div>
-        )
-      })}
-
-      {/* in "Regola": contorno del capo che si sta spostando */}
-      {adjust && activeBox && (
-        <div
-          aria-hidden
-          className="pointer-events-none absolute z-[58] rounded-input outline-2 outline-offset-4 outline-accent outline-dashed"
-          style={activeBox}
-        />
-      )}
-
-      {/* testa e collo sopra i capi del busto: il collo esce dal colletto */}
-      {av.w > 0 && worn.some((w) => w.zone === 'busto') && (
-        <div className="pointer-events-none absolute z-[55]" style={{ left: av.left, top: av.top, width: av.w, height: av.h, clipPath: headClip(avatar.anchors, av.w, av.h) }}>
-          {avatar.kind === 'mannequin' ? (
-            <Mannequin measures={avatar.measures} className="h-full w-full" />
-          ) : (
-            <img src={avatar.url} alt="" className="h-full w-full" draggable={false} />
-          )}
-        </div>
-      )}
-
-      {peek(prevId, 'left')}
-      {peek(nextId, 'right')}
-
-      {ring && (
-        <motion.svg
-          aria-hidden
-          className="pointer-events-none absolute z-[70] size-16 -translate-x-1/2 -translate-y-1/2"
-          style={{ left: ring.x, top: ring.y }}
-          viewBox="0 0 64 64"
-          // compare dopo un attimo: tocchi e swipe non fanno lampeggiare l'anello
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.12, duration: 0.1 }}
-        >
-          <circle cx="32" cy="32" r="26" fill="none" stroke="var(--accent)" strokeOpacity="0.2" strokeWidth="5" />
-          <motion.circle
-            cx="32"
-            cy="32"
-            r="26"
-            fill="none"
-            stroke="var(--accent)"
-            strokeWidth="5"
-            strokeLinecap="round"
-            transform="rotate(-90 32 32)"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: LONG_PRESS_MS / 1000, ease: 'linear' }}
+      {size.w > 0 && (
+        <>
+          {/* quando cambia zona, un alone breve la indica */}
+          <motion.div
+            key={activeZone + (onMe ? '-me' : '')}
+            aria-hidden
+            className="pointer-events-none absolute rounded-[28px] bg-accent/10"
+            style={zoneBox(activeZone)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: [0, 1, 0] }}
+            transition={{ duration: 0.9, times: [0, 0.25, 1] }}
           />
-        </motion.svg>
+
+          {onMe && (
+            <div className="absolute" style={av}>
+              <img src={onMe.url} alt="La tua foto" className="h-full w-full" draggable={false} />
+            </div>
+          )}
+
+          {items.map((it) => {
+            const style = { ...it.box, zIndex: it.z, filter: onMe ? undefined : SHADOW }
+            if (!isActive(it)) {
+              return (
+                <div key={it.key} className="pointer-events-none absolute" style={style}>
+                  {picture(it.src, it.g.name, it.top)}
+                </div>
+              )
+            }
+            return (
+              <motion.div key={it.key} className="pointer-events-none absolute" style={{ ...style, x: dragX }}>
+                <AnimatePresence custom={dir} initial={false} mode="popLayout">
+                  <motion.div
+                    key={it.g.id}
+                    custom={dir}
+                    variants={slide}
+                    initial="enter"
+                    animate="center"
+                    exit="exit"
+                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+                    className="h-full w-full"
+                  >
+                    {picture(it.src, it.g.name, it.top)}
+                  </motion.div>
+                </AnimatePresence>
+              </motion.div>
+            )
+          })}
+
+          {peek(prevId, 'left')}
+          {peek(nextId, 'right')}
+        </>
       )}
     </div>
   )

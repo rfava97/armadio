@@ -2,7 +2,7 @@ import { SUPABASE_KEY, SUPABASE_URL, supabase } from './supabase'
 import { ctx2d, makeCanvas } from './image/canvas'
 
 /** Immagine su fondo pieno (i modelli di try-on non gestiscono la trasparenza), JPEG in base64. */
-async function flatten(src: string | Blob, background: string, maxSide = 1024): Promise<string> {
+export async function flatten(src: string | Blob, background: string, maxSide = 1024): Promise<string> {
   const blob = typeof src === 'string' ? await (await fetch(src)).blob() : src
   const bmp = await createImageBitmap(blob)
   const k = Math.min(1, maxSide / Math.max(bmp.width, bmp.height))
@@ -19,7 +19,7 @@ async function flatten(src: string | Blob, background: string, maxSide = 1024): 
   return c.toDataURL('image/jpeg', 0.92)
 }
 
-async function call(person: string, garment: string, category: 'tops' | 'bottoms'): Promise<{ blob: Blob; model: string }> {
+export async function callTryOn(person: string, garment: string, category: 'tops' | 'bottoms'): Promise<{ blob: Blob; model: string }> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   if (!token) throw new Error('Sessione scaduta: rientra nell’app.')
@@ -57,12 +57,12 @@ export async function tryOnOutfit(
   let result: { blob: Blob; model: string } | null = null
   if (input.top) {
     onStep('top')
-    result = await call(person, await flatten(input.top, '#ffffff', 768), 'tops')
+    result = await callTryOn(person, await flatten(input.top, '#ffffff', 768), 'tops')
     person = await flatten(result.blob, '#f3f1ec', 1024)
   }
   if (input.bottom) {
     onStep('bottom')
-    result = await call(person, await flatten(input.bottom, '#ffffff', 768), 'bottoms')
+    result = await callTryOn(person, await flatten(input.bottom, '#ffffff', 768), 'bottoms')
   }
   if (!result) throw new Error('Metti almeno una maglia o un pantalone nel camerino.')
   return result
