@@ -9,6 +9,17 @@ import '@fontsource-variable/inter'
 import '@fontsource-variable/cormorant-garamond'
 import './index.css'
 
+// Dopo un nuovo deploy l'app ancora aperta può cercare file che non esistono più
+// ("Importing a module script failed"): ricarico una volta per prendere la versione nuova.
+window.addEventListener('vite:preloadError', (e) => {
+  const KEY = 'armadio.reloaded-at'
+  const last = Number(sessionStorage.getItem(KEY) ?? 0)
+  if (Date.now() - last < 30_000) return // già ricaricato da poco: lascio passare l'errore
+  e.preventDefault()
+  sessionStorage.setItem(KEY, String(Date.now()))
+  window.location.reload()
+})
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
 })

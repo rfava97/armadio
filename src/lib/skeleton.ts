@@ -24,7 +24,7 @@ export type Skeleton = {
 const lerp = (a: Point, b: Point, t: number): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t })
 
 /**
- * Scheletro stimato dai 7 punti calibrati (quando la pose non è disponibile): braccia lungo i
+ * Scheletro stimato dai 7 punti calibrati: braccia lungo i
  * fianchi leggermente aperte, gambe dritte dai fianchi alle caviglie.
  */
 export function skeletonFromAnchors(a: Anchors, hipWidth: number, aspect: number): Skeleton {
@@ -46,22 +46,6 @@ export function skeletonFromAnchors(a: Anchors, hipWidth: number, aspect: number
     hipR,
     kneeL: lerp(hipL, a.ankle_l, 0.5),
     kneeR: lerp(hipR, a.ankle_r, 0.5),
-    ankleL: a.ankle_l,
-    ankleR: a.ankle_r,
-  }
-}
-
-/**
- * Unisce la pose riconosciuta con i punti calibrati dall'utente: spalle, collo, vita e caviglie
- * restano quelli scelti a mano (più affidabili); gomiti, polsi, anche e ginocchia vengono dalla pose.
- */
-export function mergeSkeleton(pose: Skeleton, a: Anchors): Skeleton {
-  return {
-    ...pose,
-    neck: a.neck,
-    shoulderL: a.shoulder_l,
-    shoulderR: a.shoulder_r,
-    waist: a.waist,
     ankleL: a.ankle_l,
     ankleR: a.ankle_r,
   }

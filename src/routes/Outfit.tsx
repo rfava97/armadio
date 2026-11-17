@@ -6,7 +6,7 @@ import { Slider } from '@/components/Slider'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
 import { buildMannequin, VIEW } from '@/lib/mannequin'
-import { mergeSkeleton, skeletonFromAnchors } from '@/lib/skeleton'
+import { skeletonFromAnchors } from '@/lib/skeleton'
 import { cn } from '@/lib/utils'
 import { useGarments, useUpdateFit, type Fit, type GarmentWithThumb } from '@/features/garments/api'
 import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
@@ -47,8 +47,6 @@ export default function Outfit() {
   const body = usePreparedBody(
     profile?.avatar_mode === 'foto' ? photo.data : null,
     profile?.avatar_mode === 'foto' ? profile.body_anchors : null,
-    profile?.body_photo_path,
-    settings.mode === 'corpo',
   )
   const [state, setState] = useState<CamerinoState | null>(null)
   const [picking, setPicking] = useState(false)
@@ -88,8 +86,8 @@ export default function Outfit() {
     if (!profile) return null
     if (profile.avatar_mode === 'foto' && body && profile.body_anchors) {
       const a = profile.body_anchors
-      // pose riconosciuta (gomiti, ginocchia…) + i punti calibrati a mano; altrimenti una stima
-      const skeleton = body.pose ? mergeSkeleton(body.pose, a) : skeletonFromAnchors(a, body.hipWidth, body.aspect)
+      // gomiti, polsi e ginocchia stimati dai 7 punti calibrati a mano
+      const skeleton = skeletonFromAnchors(a, body.hipWidth, body.aspect)
       return { kind: 'photo', url: body.url, anchors: a, skeleton, aspect: body.aspect, hipWidth: body.hipWidth }
     }
     const shape = buildMannequin(profile)
@@ -271,7 +269,6 @@ export default function Outfit() {
               onSelectZone={(zone) => update((s) => (s.active.zone === zone ? s : { ...s, active: { zone, layer: 0 } }))}
               onStep={(d) => update((s) => setActiveId(s, neighbor(s, garments, d)))}
               onAddLayer={() => update((s) => addLayer(s, garments))}
-              simple={settings.mode === 'semplice'}
             />
             {zoneCount === 0 && (
               <p className="pointer-events-none absolute inset-x-0 top-1/2 text-center text-caption text-fg-muted">

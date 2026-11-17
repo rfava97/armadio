@@ -23,10 +23,6 @@ export type Dressed = {
   }
   bottom?: {
     waist: { cx: number; width: number }
-    /** riga del cavallo: sotto si separano le gambe */
-    crotchY: number
-    /** gamba sinistra e destra: centro in alto (al cavallo) e in basso (orlo) */
-    legs: { top: P; bottom: P; from: number; to: number }[]
   }
 }
 
@@ -204,23 +200,5 @@ function analyzeBottom(w: number, h: number, opaque: (x: number, y: number) => b
   const wr = ls.length ? median(rs) : w - 1
   const cx = Math.round((wl + wr) / 2)
 
-  // cavallo: prima riga (sotto il 15%) in cui al centro c'è un vuoto che continua
-  let crotchY = Math.round(h * 0.35)
-  for (let y = Math.round(h * 0.15); y < h - 4; y++) {
-    if (!opaque(cx, y) && !opaque(cx, y + 2) && !opaque(cx, y + 4)) {
-      crotchY = y
-      break
-    }
-  }
-
-  const leg = (from: number, to: number) => {
-    const ty = Math.min(h - 1, crotchY + 3)
-    const t = span(ty, from, to) ?? [from, to - 1]
-    let by = h - 1
-    while (by > ty && !span(by, from, to)) by--
-    const b = span(by, from, to) ?? t
-    return { top: { x: (t[0] + t[1]) / 2, y: ty }, bottom: { x: (b[0] + b[1]) / 2, y: by }, from, to }
-  }
-
-  return { waist: { cx, width: Math.max(1, wr - wl) }, crotchY, legs: [leg(0, cx), leg(cx, w)] }
+  return { waist: { cx, width: Math.max(1, wr - wl) } }
 }

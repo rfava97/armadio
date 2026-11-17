@@ -39,7 +39,7 @@ export default defineConfig({
         navigateFallback: `${base}index.html`,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         // librerie pesanti caricate solo quando aggiungi un capo: niente precache
-        globIgnores: ['**/ort*', '**/transformers*', '**/webp*', '**/dist-*', '**/vision_wasm*', '**/vision_bundle*'],
+        globIgnores: ['**/ort*', '**/transformers*', '**/webp*', '**/dist-*'],
       },
     }),
   ],

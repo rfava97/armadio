@@ -2,22 +2,20 @@ import { useSyncExternalStore } from 'react'
 
 /**
  * Preferenze del camerino, salvate su questo dispositivo (si cambiano dal Profilo):
- * - mode "corpo": i capi seguono braccia e gambe (pose nel browser);
- *   "semplice": capi interi su spalle e fianchi, senza riconoscere le articolazioni.
  * - tryOn: mostra il pulsante "Provalo su di me".
  */
-export type CamerinoMode = 'corpo' | 'semplice'
-export type CamerinoSettings = { mode: CamerinoMode; tryOn: boolean }
+export type CamerinoSettings = { tryOn: boolean }
 
 const KEY = 'armadio.camerino-settings'
-const DEFAULTS: CamerinoSettings = { mode: 'corpo', tryOn: true }
+const DEFAULTS: CamerinoSettings = { tryOn: true }
 const listeners = new Set<() => void>()
 let cache: CamerinoSettings | null = null
 
 function read(): CamerinoSettings {
   if (cache) return cache
   try {
-    cache = { ...DEFAULTS, ...(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<CamerinoSettings>) }
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as Partial<CamerinoSettings>
+    cache = { tryOn: saved.tryOn ?? DEFAULTS.tryOn }
   } catch {
     cache = DEFAULTS
   }

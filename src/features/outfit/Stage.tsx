@@ -43,8 +43,6 @@ type Props = {
   onSelectZone: (zone: StageZone) => void
   onStep: (dir: 1 | -1) => void
   onAddLayer: () => void
-  /** modalità "Semplice" (vedi settings.ts) */
-  simple?: boolean
 }
 
 const LONG_PRESS_MS = 500
@@ -88,7 +86,7 @@ function headClip(a: Anchors, w: number, h: number): string {
   return `polygon(${pts.map(([x, y]) => `${((x / w) * 100).toFixed(2)}% ${((y / h) * 100).toFixed(2)}%`).join(', ')})`
 }
 
-export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer, simple }: Props) {
+export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const [dressed, setDressed] = useState<Record<string, Dressed>>({})
@@ -145,7 +143,6 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
       sk,
       hipWidth: avatar.hipWidth * av.w,
       tuckY: tucked ? tuckLine(avatar.anchors, av.h) : undefined,
-      simple,
     }
     const r = layoutGarment(layout)
     return { layout, rect: { ...r, left: r.left + av.left, top: r.top + av.top } }
@@ -316,8 +313,9 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
   return (
     <div
       ref={stage}
-      // le immagini non reagiscono al tocco: niente menu "salva immagine", niente selezione
-      className="relative h-full w-full touch-none overflow-hidden select-none [-webkit-touch-callout:none] [&_img]:pointer-events-none [&_img]:select-none"
+      // le immagini non reagiscono al tocco: niente menu "salva immagine", niente selezione.
+      // isolate: i livelli interni (testa, anteprime) restano sotto i fogli che si aprono sopra
+      className="relative isolate h-full w-full touch-none overflow-hidden select-none [-webkit-touch-callout:none] [&_img]:pointer-events-none [&_img]:select-none"
       {...handlers}
       onPointerDown={(e) => {
         handlers.onPointerDown?.(e)

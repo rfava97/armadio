@@ -18,8 +18,6 @@ export type GarmentLayout = {
   hipWidth: number
   /** se la maglia è infilata: riga (px) sotto cui il busto sparisce nei pantaloni */
   tuckY?: number
-  /** modalità "Semplice": maniche dritte e pantaloni in un pezzo, senza piegarli sulle articolazioni */
-  simple?: boolean
 }
 
 /**
@@ -44,7 +42,6 @@ const HEM: Partial<Record<Category, number>> = {
 }
 
 const sub = (a: P, b: P): P => ({ x: a.x - b.x, y: a.y - b.y })
-const add = (a: P, b: P): P => ({ x: a.x + b.x, y: a.y + b.y })
 const mul = (a: P, k: number): P => ({ x: a.x * k, y: a.y * k })
 const len = (a: P) => Math.hypot(a.x, a.y)
 const norm = (a: P): P => mul(a, 1 / (len(a) || 1))
@@ -76,8 +73,6 @@ type Piece = {
   m: M
   /** rettangolo del capo (colonne/righe) da disegnare */
   rect: [number, number, number, number]
-  /** facoltativo: striscia lungo un asse, t ∈ [t0, t1] dal punto p */
-  band?: { p: P; a: P; t0: number; t1: number }
 }
 
 /**
@@ -110,33 +105,18 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
 
     for (const sl of t.sleeves) {
       const left = sl.pivot.x < g.x
-      const elbow = left ? sk.elbowL : sk.elbowR
       const wrist = left ? sk.wristL : sk.wristR
       const S0 = apply(torso, sl.pivot)
-      const upper = len(sub(elbow, S0))
-      const arm = upper + len(sub(wrist, elbow))
+      const arm = len(sub(wrist, S0))
       const natural = sl.length * s
       // maniche lunghe: il polsino arriva al polso; maniche corte: restano corte
       const k = natural > arm * 0.55 ? clamp(arm / natural, 0.75, 1.35) : 1
-      const split = upper / (s * k) // punto della manica che va sul gomito (px del capo)
-      const D1 = norm(sub(elbow, S0))
-      const rect: Piece['rect'] = [sl.from, 0, sl.to - sl.from, d.h]
-      if (L.simple) {
-        // manica rigida, dalla spalla verso il polso
-        pieces.push({ sleeve: true, m: axisMatrix(sl.pivot, sl.axis, S0, norm(sub(wrist, S0)), s * k, s), rect })
-        continue
-      }
+      // manica rigida, dalla spalla verso il polso
       pieces.push({
         sleeve: true,
-        m: axisMatrix(sl.pivot, sl.axis, S0, D1, s * k, s),
-        rect,
-        band: { p: sl.pivot, a: sl.axis, t0: -sl.length, t1: split + 2 },
+        m: axisMatrix(sl.pivot, sl.axis, S0, norm(sub(wrist, S0)), s * k, s),
+        rect: [sl.from, 0, sl.to - sl.from, d.h],
       })
-      if (sl.length > split) {
-        const p2 = add(sl.pivot, mul(sl.axis, split))
-        const D2 = norm(sub(wrist, elbow))
-        pieces.push({ sleeve: true, m: axisMatrix(p2, sl.axis, elbow, D2, s * k, s), rect, band: { p: p2, a: sl.axis, t0: -2, t1: sl.length } })
-      }
     }
   } else if (L.zone === 'gambe' && d.bottom) {
     const b = d.bottom
@@ -144,43 +124,12 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
     const sx = (hipW * 1.06 * fit.scale) / b.waist.width
     const waistY = sk.waist.y
     const waistX = mid(sk.hipL, sk.hipR).x
-    const hipJ = mid(sk.hipL, sk.hipR)
-    const thigh = len(sub(mid(sk.kneeL, sk.kneeR), hipJ))
-    const crotchBody = hipJ.y + thigh * 0.12
-    const sy = clamp((crotchBody - waistY) / Math.max(1, b.crotchY), sx * 0.7, sx * 1.5)
-    const pelvis: M = [sx, 0, 0, sy, waistX - b.waist.cx * sx, waistY]
+    const thigh = len(sub(mid(sk.kneeL, sk.kneeR), mid(sk.hipL, sk.hipR)))
+    // pantalone intero dalla vita alle caviglie, appena adattato in altezza
+    const ankleY = mid(sk.ankleL, sk.ankleR).y
+    const sy = clamp((ankleY + thigh * 0.08 - waistY) / d.h, sx * 0.77, sx * 1.3)
+    pieces.push({ m: [sx, 0, 0, sy, waistX - b.waist.cx * sx, waistY], rect: [0, 0, d.w, d.h] })
     shift = { x: fit.ox * d.w * sx, y: fit.oy * d.h * sy }
-    if (L.simple) {
-      // pantalone intero dalla vita alle caviglie, appena adattato in altezza
-      const ankleY = mid(sk.ankleL, sk.ankleR).y
-      const syAll = clamp((ankleY * 1.0 + thigh * 0.08 - waistY) / d.h, sx * 0.77, sx * 1.3)
-      pieces.push({ m: [sx, 0, 0, syAll, waistX - b.waist.cx * sx, waistY], rect: [0, 0, d.w, d.h] })
-      shift = { x: fit.ox * d.w * sx, y: fit.oy * d.h * syAll }
-    } else pieces.push({ m: pelvis, rect: [0, 0, d.w, b.crotchY + 4] })
-
-    if (!L.simple) b.legs.forEach((leg, i) => {
-      const knee = i === 0 ? sk.kneeL : sk.kneeR
-      const ankle0 = i === 0 ? sk.ankleL : sk.ankleR
-      const S = apply(pelvis, leg.top)
-      // l'orlo copre la caviglia, come un pantalone vero sopra la scarpa
-      const ankle = add(ankle0, mul(norm(sub(ankle0, knee)), len(sub(ankle0, knee)) * 0.05))
-      const K = mid(leg.top, leg.bottom)
-      const rect: Piece['rect'] = [leg.from, b.crotchY - 2, leg.to - leg.from, d.h - b.crotchY + 2]
-      const a1 = norm(sub(K, leg.top))
-      const l1 = len(sub(K, leg.top)) || 1
-      pieces.push({
-        m: axisMatrix(leg.top, a1, S, norm(sub(knee, S)), len(sub(knee, S)) / l1, sx),
-        rect,
-        band: { p: leg.top, a: a1, t0: -d.h, t1: l1 + 2 },
-      })
-      const a2 = norm(sub(leg.bottom, K))
-      const l2 = len(sub(leg.bottom, K)) || 1
-      pieces.push({
-        m: axisMatrix(K, a2, knee, norm(sub(ankle, knee)), len(sub(ankle, knee)) / l2, sx),
-        rect,
-        band: { p: K, a: a2, t0: -2, t1: d.h },
-      })
-    })
   } else {
     // scarpe (o capo non analizzato): ai piedi, in scala uniforme
     const spread = Math.max(Math.abs(sk.ankleR.x - sk.ankleL.x), shoulders * 0.35)
@@ -230,18 +179,6 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
       ctx.beginPath()
       ctx.rect(rx, ry, rw, rh)
       ctx.clip()
-      if (pc.band) {
-        const { p, a, t0, t1 } = pc.band
-        const B = d.w + d.h
-        const ap = perp(a)
-        const corner = (t: number, u: number) => add(add(p, mul(a, t)), mul(ap, u))
-        const pts = [corner(t0, -B), corner(t1, -B), corner(t1, B), corner(t0, B)]
-        ctx.beginPath()
-        ctx.moveTo(pts[0].x, pts[0].y)
-        for (const q of pts.slice(1)) ctx.lineTo(q.x, q.y)
-        ctx.closePath()
-        ctx.clip()
-      }
       ctx.drawImage(d.canvas, 0, 0)
       ctx.restore()
     }
