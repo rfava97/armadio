@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Pencil, Shirt, Trash2 } from 'lucide-react'
+import { Pencil, Shirt, Trash2, Move } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
 import { Spinner } from '@/components/Spinner'
 import { Button } from '@/components/ui/button'
@@ -162,6 +162,12 @@ function Footer({ garment, mode, values, setMode, onClose }: State & { onClose: 
   return (
     <div className="flex flex-col gap-2">
       <Button onClick={() => navigate('/outfit', { state: { garmentId: garment.id } })}>Prova nel camerino</Button>
+      {garment.zone !== 'accessorio' && (
+        <Button variant="secondary" size="md" onClick={() => navigate('/outfit', { state: { garmentId: garment.id, adjust: true } })}>
+          <Move className="size-4" aria-hidden />
+          Regola sul manichino
+        </Button>
+      )}
       <div className="grid grid-cols-2 gap-2">
         <Button variant="secondary" size="md" onClick={() => setMode('edit')}>
           <Pencil className="size-4" aria-hidden />

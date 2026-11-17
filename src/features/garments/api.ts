@@ -117,6 +117,27 @@ export function useUpdateGarment() {
   })
 }
 
+export type Fit = { fit_scale: number; fit_offset_x: number; fit_offset_y: number }
+
+/** Vestibilità del capo sul manichino (SPEC 2.3): salvata sul capo e riusata in ogni outfit. */
+export function useUpdateFit() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, ...fit }: Fit & { id: string }) => {
+      const { error } = await supabase
+        .from('garments')
+        .update({
+          fit_scale: Math.round(fit.fit_scale * 100) / 100,
+          fit_offset_x: Math.round(fit.fit_offset_x * 1000) / 1000,
+          fit_offset_y: Math.round(fit.fit_offset_y * 1000) / 1000,
+        })
+        .eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['garments'] }),
+  })
+}
+
 export function useDeleteGarment() {
   const qc = useQueryClient()
   return useMutation({
