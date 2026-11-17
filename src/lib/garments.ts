@@ -84,8 +84,12 @@ export type Garment = {
   /** "Su di me" (migrazione 003): livello nel bucket renders e foto del corpo usata */
   on_me_path?: string | null
   on_me_body?: string | null
+  /** foto del capo steso o indossato da qualcuno (migrazione 004; assente = stesa) */
+  photo_type?: PhotoType
   created_at: string
 }
+
+export type PhotoType = 'stesa' | 'indossata'
 
 /** Percorsi nel bucket privato `garments`: <user_id>/<id>.webp e la miniatura <user_id>/<id>_thumb.webp */
 export const garmentImagePath = (userId: string, id: string) => `${userId}/${id}.webp`

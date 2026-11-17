@@ -63,7 +63,10 @@ export function TryOnSheet({
         top ? garmentImageUrl(top.image_path) : Promise.resolve(undefined),
         bottom ? garmentImageUrl(bottom.image_path) : Promise.resolve(undefined),
       ])
-      const out = await tryOnOutfit({ body: bodyUrl, top: topUrl, bottom: bottomUrl }, setStep)
+      const out = await tryOnOutfit(
+        { body: bodyUrl, top: topUrl, bottom: bottomUrl, topWorn: top?.photo_type === 'indossata', bottomWorn: bottom?.photo_type === 'indossata' },
+        setStep,
+      )
       setResult({ url: URL.createObjectURL(out.blob), model: out.model, blob: out.blob, state: snapshot })
     } catch (e) {
       console.error(e)

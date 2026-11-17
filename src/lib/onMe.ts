@@ -162,10 +162,12 @@ export async function makeOnMeLayer(
   bodyUrl: string,
   garmentUrl: string,
   category: OnMeCategory,
+  /** capo fotografato indossato da qualcuno: il modello ne copia vestibilità e chiusura */
+  worn = false,
 ): Promise<{ layer: HTMLCanvasElement; model: string }> {
   const base = await flattenBody(bodyUrl)
   const garment = await flatten(garmentUrl, '#ffffff', 768)
-  const out = await callTryOn(base.toDataURL('image/jpeg', 0.92), garment, category).catch((e: unknown) => {
+  const out = await callTryOn(base.toDataURL('image/jpeg', 0.92), garment, category, worn ? 'model' : 'flat-lay').catch((e: unknown) => {
     // i messaggi della funzione tryon sono già per l'utente (quota finita, servizio occupato…)
     throw Object.assign(e instanceof Error ? e : new Error(String(e)), { userFacing: true })
   })

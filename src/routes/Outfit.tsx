@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Search, Shuffle, Sparkles, X } from 'lucide-react'
+import { Plus, RotateCcw, Search, Shuffle, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
@@ -372,6 +372,8 @@ function OnMeStatus({
     if (!missing.every(busy)) action = { label: 'Prepara', items: missing }
   } else {
     text = queue.running ? 'Preparo altri capi in sottofondo…' : 'Scorri per cambiare capo.'
+    // il capo attivo è pronto ma non convince: si può rigenerare
+    if (active && !queue.running) action = { label: 'Rifai', items: [active] }
   }
   // dopo un errore (quota finita, rete…) lo mostro al posto del testo, con "Riprova"
   if (queue.error && !queue.running) {
@@ -385,8 +387,13 @@ function OnMeStatus({
         {text}
       </p>
       {action && (
-        <Button size="md" className="h-9 shrink-0 px-4" onClick={() => onPrepare(action.items)}>
-          <Sparkles className="size-4" aria-hidden />
+        <Button
+          size="md"
+          variant={action.label === 'Rifai' ? 'secondary' : 'primary'}
+          className="h-9 shrink-0 px-4"
+          onClick={() => onPrepare(action.items)}
+        >
+          {action.label === 'Rifai' ? <RotateCcw className="size-4" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
           {action.label}
         </Button>
       )}

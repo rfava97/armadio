@@ -73,6 +73,8 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Nel camerino i livelli si sovrappongono alla foto (pantaloni, poi strati del busto dal più interno): lo swipe resta istantaneo.
 - Capi non ancora pronti: non compaiono, la riga in basso propone "Prepara". Dal Profilo si preparano tutti i capi mancanti in coda (uno alla volta, circa un minuto a capo, una decina al giorno con la quota gratuita).
 - Scarpe e accessori non si vedono su di te: restano quelli della foto.
+- **Foto del capo: Stesa | Indossata** (dettaglio capo, colonna `photo_type`, migrazione 004). "Stesa" = capo appoggiato o appeso: il modello lo veste aderente e chiuso. "Indossata" = nella foto qualcuno lo porta: il modello ne copia vestibilità e chiusura (oversize, giacca o camicia aperta). Vale anche per "Provalo su di me" (FASHN `garment_photo_type` flat-lay / model).
+- **Rifai su di me**: dal dettaglio capo o dalla riga sotto il palco, rigenera il capo (sostituisce il livello precedente).
 
 **C. "Provalo su di me" (AI, gratis con limiti)**
 - Pulsante con le scintille nell'header del camerino: genera una foto realistica dell'outfit sulla foto del corpo.
@@ -124,7 +126,7 @@ Vedi `supabase/schema.sql`. Entità: `profiles` (misure, modalità avatar, foto 
 ## 5. Edge Functions
 - `fetch-image` — input `{ url }`; scarica l'immagine lato server (max 10 MB, solo `image/*`), la restituisce come blob. Solo utenti autenticati.
 - `stylist` (opzionale) — input `{ request }`; vedi 3b. Limite: 20 richieste/giorno per rispettare il free tier.
-- `tryon` — input `{ person, garment, category }` (immagini in base64, category `tops`|`bottoms`); chiama un modello di try-on su Hugging Face (vedi 2.3 C) con il token `HF_TOKEN` (facoltativo, account gratuito) e restituisce l'immagine. Solo utenti autenticati.
+- `tryon` — input `{ person, garment, category, photoType }` (immagini in base64, category `tops`|`bottoms`, photoType `flat-lay`|`model`); chiama un modello di try-on su Hugging Face (vedi 2.3 C) con il token `HF_TOKEN` (facoltativo, account gratuito) e restituisce l'immagine. Solo utenti autenticati.
 
 ## 5b. Keep-alive (piano Free)
 I progetti Supabase gratuiti vanno in pausa dopo 7 giorni senza attività. Aggiungere `.github/workflows/keepalive.yml`: GitHub Action con cron ogni 3 giorni che fa una SELECT leggera su `garments` tramite REST con la publishable key (secrets del repo). Gratis.

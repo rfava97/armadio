@@ -1,7 +1,8 @@
 // Edge Function `tryon` (SPEC 2.3 C, "Provalo su di me"): veste la foto del corpo con un capo usando
 // un modello open source di virtual try-on ospitato gratis su Hugging Face (ZeroGPU).
-// Input: POST { person, garment, category } con le due immagini in base64 (JPEG/PNG) e
-// category "tops" | "bottoms". Output: l'immagine generata.
+// Input: POST { person, garment, category, photoType } con le due immagini in base64 (JPEG/PNG),
+// category "tops" | "bottoms" e photoType "flat-lay" (capo steso, default) | "model" (capo indossato:
+// il modello ne copia vestibilità e chiusura). Output: l'immagine generata.
 // Il token HF (account gratuito, senza carta) sta solo nei secrets: HF_TOKEN. Senza token si usa la
 // quota anonima, più piccola.
 // Solo utenti autenticati: il token Supabase viene verificato qui (deploy con --no-verify-jwt).
@@ -28,6 +29,7 @@ class HttpError extends Error {
 }
 
 type Category = 'tops' | 'bottoms'
+type PhotoType = 'flat-lay' | 'model'
 type FileData = { path: string; meta: { _type: 'gradio.FileData' } }
 
 type Model = {
@@ -35,7 +37,7 @@ type Model = {
   name: string
   host: string
   api: string
-  data: (person: FileData, garment: FileData, category: Category) => unknown[]
+  data: (person: FileData, garment: FileData, category: Category, photo: PhotoType) => unknown[]
 }
 
 /** Modelli in ordine di preferenza: se uno non risponde si passa al successivo. */
@@ -46,7 +48,7 @@ const MODELS: Model[] = [
     name: 'FASHN VTON 1.5',
     host: 'https://fashn-ai-fashn-vton-1-5.hf.space',
     api: 'try_on',
-    data: (p, g, c) => [p, g, c, 'flat-lay', 30, 1.5, 42, true],
+    data: (p, g, c, photo) => [p, g, c, photo, 30, 1.5, 42, true],
   },
   {
     // MIT; "dress_code" gestisce anche pantaloni e gonne
@@ -149,12 +151,12 @@ async function waitResult(m: Model, eventId: string, deadline: number): Promise<
   throw new Error('stream chiuso senza risultato')
 }
 
-async function runModel(m: Model, person: Uint8Array, garment: Uint8Array, category: Category, deadline: number) {
+async function runModel(m: Model, person: Uint8Array, garment: Uint8Array, category: Category, photo: PhotoType, deadline: number) {
   const [p, g] = await Promise.all([upload(m, person, 'person.jpg'), upload(m, garment, 'garment.jpg')])
   const r = await fetch(`${m.host}/gradio_api/call/${m.api}`, {
     method: 'POST',
     headers: { ...hfHeaders(), 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data: m.data(p, g, category) }),
+    body: JSON.stringify({ data: m.data(p, g, category, photo) }),
     signal: AbortSignal.timeout(20_000),
   })
   if (!r.ok) throw new Error(`call ${r.status}`)
@@ -187,6 +189,7 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => null)
     if (!body) throw new HttpError(400, 'Richiesta non valida.')
     const category: Category = body.category === 'bottoms' ? 'bottoms' : 'tops'
+    const photo: PhotoType = body.photoType === 'model' ? 'model' : 'flat-lay'
     const person = decodeImage(body.person)
     const garment = decodeImage(body.garment)
 
@@ -195,7 +198,7 @@ Deno.serve(async (req) => {
       if (Date.now() > deadline - 30_000) break
       if (!(await isRunning(m))) continue
       try {
-        const { bytes, type } = await runModel(m, person, garment, category, deadline)
+        const { bytes, type } = await runModel(m, person, garment, category, photo, deadline)
         return new Response(bytes, { headers: { ...cors, 'Content-Type': type, 'x-tryon-model': m.name, 'Cache-Control': 'no-store' } })
       } catch (e) {
         if (e instanceof HttpError) throw e // quota finita: inutile provare altri modelli

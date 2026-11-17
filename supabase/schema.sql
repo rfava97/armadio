@@ -47,6 +47,7 @@ create table garments (
   fit_offset_y numeric(5,3) not null default 0,
   on_me_path text,                  -- "Su di me": livello nel bucket renders (migrazione 003)
   on_me_body text,                  -- foto del corpo con cui è stato generato
+  photo_type text not null default 'stesa' check (photo_type in ('stesa', 'indossata')), -- migrazione 004
   created_at timestamptz not null default now()
 );
 create index garments_user_category on garments (user_id, category);

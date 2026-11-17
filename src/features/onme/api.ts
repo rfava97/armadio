@@ -1,7 +1,9 @@
-import { useQuery, type QueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useAuth } from '@/auth/context'
+import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
 import { useSyncExternalStore } from 'react'
 import { supabase } from '@/lib/supabase'
-import type { Category, Garment } from '@/lib/garments'
+import type { Category, Garment, PhotoType } from '@/lib/garments'
 import { encodeLayer } from '@/lib/image/encode'
 import { makeOnMeLayer, type OnMeCategory } from '@/lib/onMe'
 import { garmentImageUrl } from '@/lib/tryon'
@@ -41,9 +43,13 @@ export function useOnMeLayers(garments: Garment[] | undefined, bodyPath: string 
 }
 
 function friendly(e: unknown): Error {
-  const msg = e instanceof Error ? e.message : String(e)
+  // gli errori di Supabase sono oggetti con message, non sempre istanze di Error
+  const msg = (e as { message?: string } | null)?.message ?? String(e)
   if (/on_me_(path|body)/.test(msg)) {
     return new Error('Manca la migrazione 003_su_di_me.sql: eseguila nel SQL Editor di Supabase.')
+  }
+  if (/photo_type/.test(msg)) {
+    return new Error('Manca la migrazione 004_tipo_foto.sql: eseguila nel SQL Editor di Supabase.')
   }
   if ((e as { userFacing?: boolean }).userFacing) return e as Error
   return new Error('Preparazione non riuscita: riprova tra poco.')
@@ -53,7 +59,7 @@ function friendly(e: unknown): Error {
 async function prepareOne(g: Garment, body: { path: string; url: string }, userId: string) {
   const category = onMeCategory(g.category)
   if (!category) throw new Error('Questo capo non si può vedere su di te.')
-  const { layer } = await makeOnMeLayer(body.url, await garmentImageUrl(g.image_path), category)
+  const { layer } = await makeOnMeLayer(body.url, await garmentImageUrl(g.image_path), category, g.photo_type === 'indossata')
   const blob = await encodeLayer(layer)
   const path = `${userId}/onme/${g.id}-${Date.now()}.webp`
   const store = supabase.storage.from(BUCKET)
@@ -138,7 +144,36 @@ export function stopOnMe() {
   set({ pending: [] })
 }
 
+/** Messaggio leggibile per gli errori di Supabase legati alle migrazioni. */
+export const friendlyError = (e: unknown) => friendly(e).message
+
 /** Toglie il livello quando il capo viene eliminato. */
 export async function removeOnMe(g: Garment) {
   if (g.on_me_path) await supabase.storage.from(BUCKET).remove([g.on_me_path])
+}
+
+/** Avvio della preparazione con la foto del corpo in uso (null finché la foto non è pronta). */
+export function useOnMeStarter() {
+  const { data: profile } = useProfile()
+  const { session } = useAuth()
+  const qc = useQueryClient()
+  const bodyPath = profile?.body_photo_path ?? null
+  const photo = useBodyPhotoUrl(bodyPath)
+  const start =
+    bodyPath && photo.data && session
+      ? (items: Garment[]) => prepareOnMe(items, { body: { path: bodyPath, url: photo.data! }, userId: session.user.id, qc })
+      : null
+  return { bodyPath, start }
+}
+
+/** Tipo di foto del capo (stesa / indossata). */
+export function useSetPhotoType() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ id, photo_type }: { id: string; photo_type: PhotoType }) => {
+      const { error } = await supabase.from('garments').update({ photo_type }).eq('id', id)
+      if (error) throw new Error(friendlyError(error))
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['garments'] }),
+  })
 }

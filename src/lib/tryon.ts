@@ -19,14 +19,20 @@ export async function flatten(src: string | Blob, background: string, maxSide = 
   return c.toDataURL('image/jpeg', 0.92)
 }
 
-export async function callTryOn(person: string, garment: string, category: 'tops' | 'bottoms'): Promise<{ blob: Blob; model: string }> {
+/** photoType: "model" se nella foto il capo è indossato da qualcuno (vestibilità e chiusura copiate). */
+export async function callTryOn(
+  person: string,
+  garment: string,
+  category: 'tops' | 'bottoms',
+  photoType: 'flat-lay' | 'model' = 'flat-lay',
+): Promise<{ blob: Blob; model: string }> {
   const { data } = await supabase.auth.getSession()
   const token = data.session?.access_token
   if (!token) throw new Error('Sessione scaduta: rientra nell’app.')
   const res = await fetch(`${SUPABASE_URL}/functions/v1/tryon`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, apikey: SUPABASE_KEY },
-    body: JSON.stringify({ person, garment, category }),
+    body: JSON.stringify({ person, garment, category, photoType }),
   })
   if (res.status === 404) throw new Error('La funzione "tryon" non è ancora pubblicata su Supabase.')
   const type = res.headers.get('content-type') ?? ''
@@ -49,7 +55,7 @@ export type TryOnStep = 'prepare' | 'top' | 'bottom'
  * vestita. Ogni passaggio è una generazione sulla quota gratuita di Hugging Face.
  */
 export async function tryOnOutfit(
-  input: { body: string; top?: string; bottom?: string },
+  input: { body: string; top?: string; bottom?: string; topWorn?: boolean; bottomWorn?: boolean },
   onStep: (s: TryOnStep) => void,
 ): Promise<{ blob: Blob; model: string }> {
   onStep('prepare')
@@ -57,12 +63,12 @@ export async function tryOnOutfit(
   let result: { blob: Blob; model: string } | null = null
   if (input.top) {
     onStep('top')
-    result = await callTryOn(person, await flatten(input.top, '#ffffff', 768), 'tops')
+    result = await callTryOn(person, await flatten(input.top, '#ffffff', 768), 'tops', input.topWorn ? 'model' : 'flat-lay')
     person = await flatten(result.blob, '#f3f1ec', 1024)
   }
   if (input.bottom) {
     onStep('bottom')
-    result = await callTryOn(person, await flatten(input.bottom, '#ffffff', 768), 'bottoms')
+    result = await callTryOn(person, await flatten(input.bottom, '#ffffff', 768), 'bottoms', input.bottomWorn ? 'model' : 'flat-lay')
   }
   if (!result) throw new Error('Metti almeno una maglia o un pantalone nel camerino.')
   return result

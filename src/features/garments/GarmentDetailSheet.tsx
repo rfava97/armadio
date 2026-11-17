@@ -9,6 +9,7 @@ import { CATEGORY_SINGULAR } from '@/lib/garments'
 import { colorName } from '@/lib/colors'
 import { useDeleteGarment, useSignedImage, useUpdateGarment, type GarmentWithThumb } from './api'
 import { GarmentForm } from './GarmentForm'
+import { OnMeGarmentPanel } from '@/features/onme/OnMeGarmentPanel'
 import { isFormComplete, type FormValues } from './form'
 
 type Mode = 'view' | 'edit' | 'confirm-delete'
@@ -88,6 +89,7 @@ function Body({ garment, mode, values, setValues }: State) {
         <dt className="text-fg-muted">Tag</dt>
         <dd>{garment.tags.length ? garment.tags.join(', ') : '–'}</dd>
       </dl>
+      {mode === 'view' && <OnMeGarmentPanel garment={garment} />}
       {mode === 'confirm-delete' && (
         <p role="alert" className="rounded-input bg-surface-muted p-4 text-body">
           Eliminare <strong>{garment.name}</strong>? L'operazione non si può annullare.
