@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react'
 import { ctx2d, makeCanvas } from '@/lib/image/canvas'
 import { keepMainParts } from '@/lib/image/components'
 import type { Anchors } from '@/lib/mannequin'
+import { detectPose } from '@/lib/pose'
+import type { Skeleton } from '@/lib/skeleton'
 
-export type PreparedBody = { url: string; aspect: number; hipWidth: number }
+/** pose: undefined finché la si sta cercando, null se non trovata */
+export type PreparedBody = { url: string; aspect: number; hipWidth: number; pose: Skeleton | null | undefined }
 
 /** Larghezza della sagoma sulla riga y, nel tratto opaco che contiene (o è più vicino a) x. */
 function widthAt(d: Uint8ClampedArray, w: number, y: number, x: number): number {
@@ -27,7 +30,12 @@ function widthAt(d: Uint8ClampedArray, w: number, y: number, x: number): number 
  * Foto del corpo pronta per il camerino: tolti i puntini rimasti dalla scontornatura,
  * misurata la larghezza dei fianchi (serve a vestire i pantaloni).
  */
-export function usePreparedBody(src: string | null | undefined, anchors: Anchors | null | undefined) {
+export function usePreparedBody(
+  src: string | null | undefined,
+  anchors: Anchors | null | undefined,
+  /** chiave stabile della foto (percorso nello storage) per non ricalcolare la pose */
+  key: string | null | undefined,
+) {
   const [state, setState] = useState<{ src: string; body: PreparedBody } | null>(null)
 
   useEffect(() => {
@@ -54,7 +62,15 @@ export function usePreparedBody(src: string | null | undefined, anchors: Anchors
       c.toBlob((b) => {
         if (cancelled) return
         url = b ? URL.createObjectURL(b) : src
-        setState({ src, body: { url, aspect: w / h, hipWidth } })
+        const body: PreparedBody = { url, aspect: w / h, hipWidth, pose: undefined }
+        setState({ src, body })
+        // gomiti, polsi, anche e ginocchia: riconosciuti nel browser, una volta per foto
+        detectPose(key ?? src, c)
+          .then((pose) => !cancelled && setState({ src, body: { ...body, pose } }))
+          .catch((e) => {
+            console.warn('Pose non riconosciuta', e)
+            if (!cancelled) setState({ src, body: { ...body, pose: null } })
+          })
       }, 'image/png')
     }
     img.src = src
@@ -62,7 +78,7 @@ export function usePreparedBody(src: string | null | undefined, anchors: Anchors
       cancelled = true
       if (url?.startsWith('blob:')) URL.revokeObjectURL(url)
     }
-  }, [src, anchors])
+  }, [src, anchors, key])
 
   return state && state.src === src ? state.body : null
 }

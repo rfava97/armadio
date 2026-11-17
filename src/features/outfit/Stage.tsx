@@ -5,14 +5,33 @@ import { Mannequin } from '@/components/Mannequin'
 import type { Anchors, Measures } from '@/lib/mannequin'
 import type { GarmentWithThumb, Fit } from '@/features/garments/api'
 import { dressGarment, type Dressed } from '@/lib/image/dress'
-import { placeGarment, tuckLine, type Box } from './placement'
+import { tuckLine } from './placement'
+import { layoutGarment, type GarmentLayout, type Rect, type SkeletonPx } from './render'
+import type { Skeleton } from '@/lib/skeleton'
 import { getActiveId, MAX_LAYERS, neighbor, type CamerinoState, type StageZone } from './state'
-import { cn } from '@/lib/utils'
 
 /** hipWidth: larghezza del corpo ai fianchi in frazione della larghezza dell'avatar */
 export type AvatarSource =
-  | { kind: 'mannequin'; measures: Measures; anchors: Anchors; aspect: number; hipWidth: number }
-  | { kind: 'photo'; url: string; anchors: Anchors; aspect: number; hipWidth: number }
+  | { kind: 'mannequin'; measures: Measures; anchors: Anchors; skeleton: Skeleton; aspect: number; hipWidth: number }
+  | { kind: 'photo'; url: string; anchors: Anchors; skeleton: Skeleton; aspect: number; hipWidth: number }
+
+/** Un capo disegnato sul corpo: canvas grande quanto l'avatar (nitido sugli schermi retina). */
+function GarmentCanvas({ layout, w, h, alt }: { layout: GarmentLayout; w: number; h: number; alt: string }) {
+  const ref = useRef<HTMLCanvasElement>(null)
+  useLayoutEffect(() => {
+    const c = ref.current
+    if (!c) return
+    const dpr = Math.min(2, window.devicePixelRatio || 1)
+    c.width = Math.round(w * dpr)
+    c.height = Math.round(h * dpr)
+    const ctx = c.getContext('2d')
+    if (!ctx) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    layoutGarment(layout, ctx)
+  })
+  return <canvas ref={ref} role="img" aria-label={alt} className="pointer-events-none block" style={{ width: w, height: h }} />
+}
 
 type Props = {
   garments: GarmentWithThumb[]
@@ -67,15 +86,6 @@ function headClip(a: Anchors, w: number, h: number): string {
   return `polygon(${pts.map(([x, y]) => `${((x / w) * 100).toFixed(2)}% ${((y / h) * 100).toFixed(2)}%`).join(', ')})`
 }
 
-/** Clip-path che nasconde il busto di una maglia infilata sotto la vita (le maniche restano). */
-function tuckClip(d: Dressed, b: Box, cutY: number): string | undefined {
-  if (!d.torso) return undefined
-  const cut = Math.max(0, Math.min(100, ((cutY - b.top) / b.height) * 100))
-  const l = (d.torso.left / d.w) * 100
-  const r = (d.torso.right / d.w) * 100
-  return `polygon(0% 0%, 100% 0%, 100% 100%, ${r}% 100%, ${r}% ${cut}%, ${l}% ${cut}%, ${l}% 100%, 0% 100%)`
-}
-
 export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
@@ -89,6 +99,9 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
   useLayoutEffect(() => {
     const el = stage.current
     if (!el) return
+    // misura subito, senza aspettare il primo giro del ResizeObserver
+    const r = el.getBoundingClientRect()
+    setSize({ w: r.width, h: r.height })
     const ro = new ResizeObserver(([e]) => setSize({ w: e.contentRect.width, h: e.contentRect.height }))
     ro.observe(el)
     return () => ro.disconnect()
@@ -109,11 +122,30 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
   const activeId = getActiveId(state)
   const { zone: activeZone, layer: activeLayer } = state.active
 
-  const boxFor = (g: GarmentWithThumb, zone: StageZone, fit?: Fit | null): Box | null => {
-    const dg = dressed[g.id]
-    if (!dg || av.w === 0) return null
-    const b = placeGarment(fit ? { ...g, ...fit } : g, zone, dg, avatar.anchors, avatar.hipWidth, av.w, av.h)
-    return { ...b, left: b.left + av.left, top: b.top + av.top }
+  const sk = useMemo(() => {
+    const out = {} as SkeletonPx
+    for (const [k, p] of Object.entries(avatar.skeleton) as [keyof Skeleton, { x: number; y: number }][]) {
+      out[k] = { x: p.x * av.w, y: p.y * av.h }
+    }
+    return out
+  }, [avatar.skeleton, av.w, av.h])
+
+  /** Come va disegnato un capo sul corpo, e il riquadro che occupa (px del palco). */
+  const layoutFor = (g: GarmentWithThumb, zone: StageZone, fit?: Fit | null, tucked = false): { layout: GarmentLayout; rect: Rect } | null => {
+    const d = dressed[g.id]
+    if (!d || av.w === 0) return null
+    const f = fit ?? g
+    const layout: GarmentLayout = {
+      d,
+      category: g.category,
+      zone,
+      fit: { scale: Number(f.fit_scale) || 1, ox: Number(f.fit_offset_x) || 0, oy: Number(f.fit_offset_y) || 0 },
+      sk,
+      hipWidth: avatar.hipWidth * av.w,
+      tuckY: tucked ? tuckLine(avatar.anchors, av.h) : undefined,
+    }
+    const r = layoutGarment(layout)
+    return { layout, rect: { ...r, left: r.left + av.left, top: r.top + av.top } }
   }
 
   // capi indossati, con il loro ordine z (gambe < scarpe < busto per rango e strato)
@@ -186,7 +218,7 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
 
   const adjustStart = useRef<Fit | null>(null)
   const activeWorn = worn.find(isActive)
-  const activeBox = activeWorn ? boxFor(activeWorn.g, activeWorn.zone, adjust) : null
+  const activeBox = activeWorn ? (layoutFor(activeWorn.g, activeWorn.zone, adjust)?.rect ?? null) : null
 
   const bind = useGesture(
     {
@@ -258,21 +290,23 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
     if (!id || id === activeId) return null
     const g = byId.get(id)
     if (!g || !activeWorn) return null
-    const b = boxFor(g, activeZone)
-    if (!b) return null
-    const left = side === 'left' ? size.w * PEEK - b.width : size.w * (1 - PEEK)
+    const l = layoutFor(g, activeZone)
+    if (!l) return null
+    const b = l.rect
+    // sposto il capo di lato: se ne vede solo un pezzo, al bordo del palco
+    const dx = side === 'left' ? size.w * PEEK - (b.left + b.width) : size.w * (1 - PEEK) - b.left
     return (
-      <button
-        key={`peek-${side}`}
-        type="button"
-        aria-label={`${side === 'left' ? 'Capo precedente' : 'Capo successivo'}: ${g.name}`}
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={() => step(side === 'left' ? -1 : 1)}
-        className="absolute z-[60] opacity-45 transition-opacity active:opacity-70"
-        style={{ left, top: b.top, width: b.width, height: b.height }}
-      >
-        <img src={dressed[g.id].url} alt="" className="h-full w-full" draggable={false} />
-      </button>
+      <div key={`peek-${side}`} className="pointer-events-none absolute z-[60] opacity-45" style={{ left: av.left + dx, top: av.top }}>
+        <GarmentCanvas layout={l.layout} w={av.w} h={av.h} alt="" />
+        <button
+          type="button"
+          aria-label={`${side === 'left' ? 'Capo precedente' : 'Capo successivo'}: ${g.name}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => step(side === 'left' ? -1 : 1)}
+          className="pointer-events-auto absolute"
+          style={{ left: b.left - av.left, top: b.top - av.top, width: b.width, height: b.height }}
+        />
+      </div>
     )
   }
 
@@ -323,26 +357,20 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
 
       {worn.map((w) => {
         const active = isActive(w)
-        const b = boxFor(w.g, w.zone, active ? adjust : null)
-        if (!b) return null
         const tucked = w.zone === 'busto' && !!state.outfit.gambe && (state.outfit.tucked ?? []).includes(w.g.id)
-        const clipPath = tucked ? tuckClip(dressed[w.g.id], b, av.top + tuckLine(avatar.anchors, av.h)) : undefined
-        const img = (
-          <img src={dressed[w.g.id].url} alt={w.g.name} className="h-full w-full" draggable={false} style={{ clipPath }} />
-        )
+        const l = layoutFor(w.g, w.zone, active ? adjust : null, tucked)
+        if (!l) return null
+        const canvas = <GarmentCanvas layout={l.layout} w={av.w} h={av.h} alt={w.g.name} />
+        const pos = { left: av.left, top: av.top, width: av.w, height: av.h, zIndex: w.z, filter: SHADOW }
         if (!active) {
           return (
-            <div key={w.g.id + w.zone + w.layer} className="pointer-events-none absolute" style={{ ...b, zIndex: w.z, filter: SHADOW }}>
-              {img}
+            <div key={w.g.id + w.zone + w.layer} className="pointer-events-none absolute" style={pos}>
+              {canvas}
             </div>
           )
         }
         return (
-          <motion.div
-            key={`active-${w.zone}-${w.layer}`}
-            className="pointer-events-none absolute"
-            style={{ ...b, zIndex: w.z, x: dragX, filter: SHADOW }}
-          >
+          <motion.div key={`active-${w.zone}-${w.layer}`} className="pointer-events-none absolute" style={{ ...pos, x: dragX }}>
             <AnimatePresence custom={dir} initial={false} mode="popLayout">
               <motion.div
                 key={w.g.id}
@@ -352,14 +380,23 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
                 animate="center"
                 exit="exit"
                 transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                className={cn('h-full w-full', adjust && 'rounded-input outline-2 outline-offset-4 outline-accent outline-dashed')}
+                className="h-full w-full"
               >
-                {img}
+                {canvas}
               </motion.div>
             </AnimatePresence>
           </motion.div>
         )
       })}
+
+      {/* in "Regola": contorno del capo che si sta spostando */}
+      {adjust && activeBox && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute z-[58] rounded-input outline-2 outline-offset-4 outline-accent outline-dashed"
+          style={activeBox}
+        />
+      )}
 
       {/* testa e collo sopra i capi del busto: il collo esce dal colletto */}
       {av.w > 0 && worn.some((w) => w.zone === 'busto') && (

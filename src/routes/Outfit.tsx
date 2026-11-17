@@ -6,6 +6,7 @@ import { Slider } from '@/components/Slider'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
 import { buildMannequin, VIEW } from '@/lib/mannequin'
+import { mergeSkeleton, skeletonFromAnchors } from '@/lib/skeleton'
 import { cn } from '@/lib/utils'
 import { useGarments, useUpdateFit, type Fit, type GarmentWithThumb } from '@/features/garments/api'
 import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
@@ -39,7 +40,11 @@ export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
   const { data: profile } = useProfile()
   const photo = useBodyPhotoUrl(profile?.avatar_mode === 'foto' ? profile.body_photo_path : null)
-  const body = usePreparedBody(photo.data, profile?.avatar_mode === 'foto' ? profile.body_anchors : null)
+  const body = usePreparedBody(
+    photo.data,
+    profile?.avatar_mode === 'foto' ? profile.body_anchors : null,
+    profile?.body_photo_path,
+  )
   const [state, setState] = useState<CamerinoState | null>(null)
   const [picking, setPicking] = useState(false)
   const [adjust, setAdjust] = useState<Fit | null>(null)
@@ -76,10 +81,20 @@ export default function Outfit() {
   const avatar: AvatarSource | null = useMemo(() => {
     if (!profile) return null
     if (profile.avatar_mode === 'foto' && body && profile.body_anchors) {
-      return { kind: 'photo', url: body.url, anchors: profile.body_anchors, aspect: body.aspect, hipWidth: body.hipWidth }
+      const a = profile.body_anchors
+      // pose riconosciuta (gomiti, ginocchia…) + i punti calibrati a mano; altrimenti una stima
+      const skeleton = body.pose ? mergeSkeleton(body.pose, a) : skeletonFromAnchors(a, body.hipWidth, body.aspect)
+      return { kind: 'photo', url: body.url, anchors: a, skeleton, aspect: body.aspect, hipWidth: body.hipWidth }
     }
     const shape = buildMannequin(profile)
-    return { kind: 'mannequin', measures: profile, anchors: shape.anchors, aspect: VIEW.w / VIEW.h, hipWidth: shape.hipWidth }
+    return {
+      kind: 'mannequin',
+      measures: profile,
+      anchors: shape.anchors,
+      skeleton: shape.skeleton,
+      aspect: VIEW.w / VIEW.h,
+      hipWidth: shape.hipWidth,
+    }
   }, [profile, body])
 
   const byId = useMemo(() => new Map((garments ?? []).map((g) => [g.id, g])), [garments])
