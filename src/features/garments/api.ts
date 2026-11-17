@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/auth/context'
+import { removeWearFiles } from '@/features/onme/api'
 import {
   CATEGORY_LAYER_RANK,
   CATEGORY_ZONE,
@@ -92,7 +93,10 @@ export function useCreateGarment() {
       }
       return id
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['garments'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['garments'] })
+      void qc.invalidateQueries({ queryKey: ['wears'] })
+    },
   })
 }
 
@@ -113,7 +117,10 @@ export function useUpdateGarment() {
         .eq('id', id)
       if (error) throw error
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['garments'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['garments'] })
+      void qc.invalidateQueries({ queryKey: ['wears'] })
+    },
   })
 }
 
@@ -121,14 +128,17 @@ export function useDeleteGarment() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: async (g: Garment) => {
+      // prima i file dei modi di indossarlo (le righe spariscono con il capo)
+      await removeWearFiles(g.id).catch(() => undefined)
       const { error } = await supabase.from('garments').delete().eq('id', g.id)
       if (error) throw error
       const paths = [g.image_path, thumbPathFor(g.image_path)]
       if (g.original_path) paths.push(g.original_path)
-      if (g.fit_photo_path) paths.push(g.fit_photo_path)
       await supabase.storage.from(BUCKET).remove(paths)
-      if (g.on_me_path) await supabase.storage.from('renders').remove([g.on_me_path])
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['garments'] }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['garments'] })
+      void qc.invalidateQueries({ queryKey: ['wears'] })
+    },
   })
 }

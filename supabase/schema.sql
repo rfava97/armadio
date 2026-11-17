@@ -45,12 +45,22 @@ create table garments (
   fit_scale numeric(4,2) not null default 1.00,
   fit_offset_x numeric(5,3) not null default 0,
   fit_offset_y numeric(5,3) not null default 0,
-  on_me_path text,                  -- "Su di me": livello nel bucket renders (migrazione 003)
-  on_me_body text,                  -- foto del corpo con cui è stato generato
-  fit_photo_path text,              -- foto del capo indossato, solo per il try-on (migrazione 005)
   created_at timestamptz not null default now()
 );
 create index garments_user_category on garments (user_id, category);
+
+-- Modi di indossare un capo (migrazione 006): foto indossata e livello "Su di me" per ciascuno
+create table garment_wears (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users on delete cascade,
+  garment_id uuid not null references garments on delete cascade,
+  name text not null,
+  fit_photo_path text,              -- foto indossata (bucket garments), facoltativa
+  on_me_path text,                  -- livello "Su di me" (bucket renders)
+  on_me_body text,                  -- foto del corpo con cui è stato generato
+  created_at timestamptz not null default now()
+);
+create index garment_wears_garment on garment_wears (garment_id);
 
 -- Outfit salvati
 create table outfits (
@@ -70,6 +80,7 @@ create table outfit_items (
   garment_id uuid not null references garments on delete cascade,
   zone body_zone not null,
   layer smallint not null default 1,  -- 1..3 per il busto
+  wear_id uuid references garment_wears on delete set null, -- modo di indossarlo (migrazione 006)
   primary key (outfit_id, garment_id)
 );
 
@@ -91,11 +102,14 @@ alter table profiles enable row level security;
 alter table garments enable row level security;
 alter table outfits enable row level security;
 alter table outfit_items enable row level security;
+alter table garment_wears enable row level security;
 alter table tryon_jobs enable row level security;
 
 create policy "own profile" on profiles for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own garments" on garments for all
+  using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "own garment wears" on garment_wears for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());
 create policy "own outfits" on outfits for all
   using (user_id = auth.uid()) with check (user_id = auth.uid());

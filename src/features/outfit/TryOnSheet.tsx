@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Check, Download, ExternalLink, Heart, RotateCcw, Sparkles } from 'lucide-react'
+import { Download, ExternalLink, RotateCcw, Sparkles } from 'lucide-react'
 import { BottomSheet } from '@/components/BottomSheet'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
-import { Chip } from '@/components/Chip'
-import { Input } from '@/components/ui/input'
-import { useToast } from '@/components/toast'
-import { OUTFIT_STYLES, STYLE_LABEL, useSaveRenderedOutfit, type OutfitStyle } from '@/features/outfits/api'
+import { SaveOutfitForm } from '@/features/outfits/SaveOutfitForm'
 import type { CamerinoState } from './state'
 import type { GarmentWithThumb } from '@/features/garments/api'
 import { garmentImageUrl, tryOnOutfit, type TryOnStep } from '@/lib/tryon'
@@ -31,6 +28,7 @@ export function TryOnSheet({
   bottom,
   layers,
   shoes,
+  fitPhotos,
   state,
 }: {
   open: boolean
@@ -42,6 +40,8 @@ export function TryOnSheet({
   /** per il prompt di Gemini: tutti gli strati del busto (dal più interno) e le scarpe */
   layers: GarmentWithThumb[]
   shoes?: GarmentWithThumb
+  /** foto indossata del modo scelto per ogni capo (id capo → percorso), se c'è */
+  fitPhotos: Map<string, string>
   /** il camerino al momento della generazione: viene salvato con l'outfit */
   state: CamerinoState
 }) {
@@ -49,11 +49,6 @@ export function TryOnSheet({
   const [result, setResult] = useState<{ url: string; model: string; blob: Blob; state: CamerinoState } | null>(null)
   const [copied, setCopied] = useState(false)
   const geminiItems = [...layers, ...(bottom ? [bottom] : []), ...(shoes ? [shoes] : [])]
-  const [name, setName] = useState('')
-  const [style, setStyle] = useState<OutfitStyle>('casual')
-  const [saved, setSaved] = useState(false)
-  const saveMut = useSaveRenderedOutfit()
-  const toast = useToast()
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => () => {
@@ -64,16 +59,15 @@ export function TryOnSheet({
     if (!bodyUrl) return
     setError(null)
     setResult(null)
-    setSaved(false)
     const snapshot = state
     try {
       const [topUrl, bottomUrl] = await Promise.all([
         // la foto indossata, se c'è, porta vestibilità e chiusura del capo
-        top ? garmentImageUrl(top.fit_photo_path ?? top.image_path) : Promise.resolve(undefined),
-        bottom ? garmentImageUrl(bottom.fit_photo_path ?? bottom.image_path) : Promise.resolve(undefined),
+        top ? garmentImageUrl(fitPhotos.get(top.id) ?? top.image_path) : Promise.resolve(undefined),
+        bottom ? garmentImageUrl(fitPhotos.get(bottom.id) ?? bottom.image_path) : Promise.resolve(undefined),
       ])
       const out = await tryOnOutfit(
-        { body: bodyUrl, top: topUrl, bottom: bottomUrl, topWorn: !!top?.fit_photo_path, bottomWorn: !!bottom?.fit_photo_path },
+        { body: bodyUrl, top: topUrl, bottom: bottomUrl, topWorn: !!top && fitPhotos.has(top.id), bottomWorn: !!bottom && fitPhotos.has(bottom.id) },
         setStep,
       )
       setResult({ url: URL.createObjectURL(out.blob), model: out.model, blob: out.blob, state: snapshot })
@@ -129,48 +123,7 @@ export function TryOnSheet({
             </p>
           )}
 
-          {result && !saved && (
-            <div className="flex flex-col gap-3 rounded-card border border-border p-4">
-              <label className="flex flex-col gap-2">
-                <span className="text-label font-medium text-fg-muted">Nome dell'outfit</span>
-                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Es. Weekend" />
-              </label>
-              <div className="flex flex-col gap-2">
-                <span className="text-label font-medium text-fg-muted">Stile</span>
-                <div className="flex flex-wrap gap-2">
-                  {OUTFIT_STYLES.map((st) => (
-                    <Chip key={st} selected={style === st} onClick={() => setStyle(st)}>
-                      {STYLE_LABEL[st]}
-                    </Chip>
-                  ))}
-                </div>
-              </div>
-              <Button
-                disabled={!name.trim() || saveMut.isPending}
-                onClick={() =>
-                  saveMut.mutate(
-                    { name, style, image: result.blob, state: result.state },
-                    {
-                      onSuccess: () => {
-                        setSaved(true)
-                        toast('Aggiunto ai preferiti')
-                      },
-                    },
-                  )
-                }
-              >
-                {saveMut.isPending ? <Spinner /> : <Heart className="size-5" aria-hidden />}
-                {saveMut.isPending ? 'Salvataggio…' : 'Salva nei preferiti'}
-              </Button>
-              {saveMut.error && <p className="text-caption text-danger">{saveMut.error.message}</p>}
-            </div>
-          )}
-          {saved && (
-            <p className="flex items-center gap-2 text-card" role="status">
-              <Check className="size-5 text-accent" aria-hidden />
-              Salvato nei preferiti: lo trovi nel Profilo.
-            </p>
-          )}
+          {result && <SaveOutfitForm key={result.url} image={result.blob} state={result.state} />}
 
           {result ? (
             <div className="flex flex-col gap-2">
@@ -201,7 +154,7 @@ export function TryOnSheet({
             rel="noopener noreferrer"
             onClick={() => {
               navigator.clipboard
-                ?.writeText(geminiPrompt(geminiItems))
+                ?.writeText(geminiPrompt(geminiItems, '', new Set(fitPhotos.keys())))
                 .then(() => setCopied(true))
                 .catch(() => undefined)
             }}

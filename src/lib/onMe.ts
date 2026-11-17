@@ -201,3 +201,27 @@ export async function makeOnMeLayer(
     bmp.close()
   }
 }
+
+/**
+ * L'immagine "Su di me" come si vede nel camerino: la tua foto e, sopra, i livelli dei capi
+ * (pantaloni, poi gli strati del busto dal più interno) su fondo chiaro. Per salvarla nei preferiti.
+ */
+export async function composeOnMe(bodyUrl: string, layerUrls: string[]): Promise<Blob> {
+  const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
+  const body = await load(bodyUrl)
+  const w = body.width
+  const h = body.height
+  const pad = ON_ME_PAD * Math.max(w, h)
+  const c = makeCanvas(w, h)
+  const ctx = ctx2d(c)
+  ctx.fillStyle = BACKGROUND
+  ctx.fillRect(0, 0, w, h)
+  ctx.drawImage(body, 0, 0)
+  body.close()
+  for (const u of layerUrls) {
+    const l = await load(u)
+    ctx.drawImage(l, -pad, -pad, w + pad * 2, h + pad * 2)
+    l.close()
+  }
+  return new Promise((ok, ko) => c.toBlob((b) => (b ? ok(b) : ko(new Error('Immagine non valida'))), 'image/png'))
+}

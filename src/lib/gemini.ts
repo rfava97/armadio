@@ -17,10 +17,10 @@ const KIND: Record<string, string> = {
 }
 
 /** Prompt in inglese (Gemini lo segue meglio); le note di vestibilità restano come le scrive l'utente. */
-export function geminiPrompt(items: Garment[], notes = ''): string {
+export function geminiPrompt(items: Garment[], notes = '', worn: Set<string> = new Set()): string {
   const lines = items.map((g, i) => {
-    const worn = g.fit_photo_path ? ' — shown worn by another person: copy only the garment and the way it fits, not the person' : ''
-    return `- Image ${i + 2}: ${KIND[g.category] ?? 'garment'} "${g.name}"${worn}`
+    const w = worn.has(g.id) ? ' — shown worn by another person: copy only the garment and the way it fits, not the person' : ''
+    return `- Image ${i + 2}: ${KIND[g.category] ?? 'garment'} "${g.name}"${w}`
   })
   const shoes = items.some((g) => g.category === 'scarpe')
   const layered = items.filter((g) => g.zone === 'busto').length > 1
@@ -42,4 +42,31 @@ export function geminiPrompt(items: Garment[], notes = ''): string {
     .filter((l, i, all) => !(l === '' && all[i - 1] === ''))
     .join('\n')
     .trim()
+}
+
+/**
+ * Prompt per far creare a Gemini la foto indossata di un capo: un modello qualunque, con la tua
+ * altezza, che lo porta come indicato (es. "aperta"). Nessuna tua foto: solo quella del capo.
+ */
+const HOW: Record<string, string> = {
+  aperta: 'open (fully unzipped / unbuttoned), hanging loose at the front',
+  aperto: 'open (fully unzipped / unbuttoned), hanging loose at the front',
+  chiusa: 'closed (fully zipped / buttoned)',
+  chiuso: 'closed (fully zipped / buttoned)',
+}
+
+export function geminiFitPrompt(g: Garment, howIt: string, heightCm: number | null | undefined): string {
+  const bottom = g.zone === 'gambe'
+  const how = HOW[howIt.trim().toLowerCase()] ?? howIt
+  return [
+    'Fashion e-commerce photo. Use the garment in the attached image.',
+    `Create a photo of a man wearing exactly this ${KIND[g.category] ?? 'garment'}, worn like this: ${how.trim() || 'as it is normally worn'}.`,
+    `Model: about ${Math.round(heightCm ?? 175)} cm tall, average build, standing straight and facing the camera, arms slightly away from the body, full body visible from head to feet.`,
+    bottom
+      ? 'He also wears a plain fitted white t-shirt and is barefoot, so the garment is clearly visible.'
+      : 'He also wears plain fitted black trousers and is barefoot, so the garment is clearly visible.',
+    'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. Realistic fit with natural folds and drape, true to how it is worn above.',
+    'Plain light grey background, soft even studio light, sharp photo.',
+    'Output: one single full-body image.',
+  ].join('\n')
 }

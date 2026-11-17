@@ -80,16 +80,17 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
   const { zone: activeZone, layer: activeLayer } = state.active
 
   // la foto: alta quanto il palco, centrata, appoggiata in basso
+  const aspect = onMe?.aspect
   const av = useMemo<Box>(() => {
-    if (!onMe) return { left: 0, top: 0, width: size.w, height: size.h }
+    if (!aspect) return { left: 0, top: 0, width: size.w, height: size.h }
     let h = size.h
-    let w = h * onMe.aspect
+    let w = h * aspect
     if (w > size.w * 0.7) {
       w = size.w * 0.7
-      h = w / onMe.aspect
+      h = w / aspect
     }
     return { left: (size.w - w) / 2, top: size.h - h, width: w, height: h }
-  }, [size, onMe])
+  }, [size, aspect])
 
   // tavolo: px per cm, e la composizione centrata in verticale
   const cm = Math.max(0.01, Math.min(size.h / TABLE_H, size.w / TABLE_W))
@@ -119,9 +120,10 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
   }
 
   // cambiando capo, zona o vista il capo attivo riparte sempre dal centro
+  const onMeView = !!onMe
   useEffect(() => {
     dragX.set(0)
-  }, [activeId, activeZone, activeLayer, onMe, dragX])
+  }, [activeId, activeZone, activeLayer, onMeView, dragX])
 
   const prevId = neighbor(state, garments, -1)
   const nextId = neighbor(state, garments, 1)

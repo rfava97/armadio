@@ -20,6 +20,8 @@ export type Outfit = {
   piedi: string | null
   /** capi del busto infilati nei pantaloni */
   tucked?: string[]
+  /** modo di indossare scelto per ogni capo (id capo → id modo, es. felpa "Aperta") */
+  wears?: Record<string, string>
 }
 
 export type Active = { zone: StageZone; layer: number }
@@ -63,6 +65,7 @@ export function sanitize(s: CamerinoState, garments: Garment[]): CamerinoState {
     gambe: keep(s.outfit.gambe),
     piedi: keep(s.outfit.piedi),
     tucked: (s.outfit.tucked ?? []).filter((id) => ids.has(id)),
+    wears: Object.fromEntries(Object.entries(s.outfit.wears ?? {}).filter(([id]) => ids.has(id))),
   }
   const layer = s.active.zone === 'busto' ? Math.min(s.active.layer, outfit.busto.length - 1) : 0
   return { outfit, active: { zone: s.active.zone, layer: Math.max(0, layer) } }
@@ -158,4 +161,9 @@ export function wear(s: CamerinoState, g: Garment): CamerinoState {
   const busto = [...s.outfit.busto]
   busto[layer] = g.id
   return { outfit: { ...s.outfit, busto }, active: { zone, layer } }
+}
+
+/** Sceglie il modo di indossare un capo (es. "Aperta"). */
+export function setWear(s: CamerinoState, garmentId: string, wearId: string): CamerinoState {
+  return { ...s, outfit: { ...s.outfit, wears: { ...s.outfit.wears, [garmentId]: wearId } } }
 }

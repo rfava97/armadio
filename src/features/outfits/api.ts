@@ -20,7 +20,7 @@ export const STYLE_LABEL: Record<OutfitStyle, string> = {
   altro: 'Altro',
 }
 
-export type OutfitItem = { garment_id: string; zone: StageZone; layer: number }
+export type OutfitItem = { garment_id: string; zone: StageZone; layer: number; wear_id?: string | null }
 export type SavedOutfit = {
   id: string
   name: string
@@ -38,12 +38,13 @@ export function useOutfits() {
     enabled: !!session,
     staleTime: STALE,
     queryFn: async (): Promise<SavedOutfit[]> => {
-      const { data, error } = await supabase
-        .from('outfits')
-        .select('id, name, style, render_path, created_at, outfit_items(garment_id, zone, layer)')
-        .order('created_at', { ascending: false })
+      const query = (cols: string) =>
+        supabase.from('outfits').select(`id, name, style, render_path, created_at, outfit_items(${cols})`).order('created_at', { ascending: false })
+      // wear_id arriva con la migrazione 006: senza, carico gli outfit come prima
+      let { data, error } = await query('garment_id, zone, layer, wear_id')
+      if (error && /wear_id/.test(error.message)) ({ data, error } = await query('garment_id, zone, layer'))
       if (error) throw error
-      const rows = (data ?? []) as Omit<SavedOutfit, 'renderUrl'>[]
+      const rows = (data ?? []) as unknown as Omit<SavedOutfit, 'renderUrl'>[]
       const paths = rows.map((r) => r.render_path).filter((p): p is string => !!p)
       const byPath = new Map<string, string>()
       if (paths.length) {
@@ -62,6 +63,11 @@ function itemsOf(s: CamerinoState): OutfitItem[] {
   s.outfit.busto.forEach((id, i) => id && items.push({ garment_id: id, zone: 'busto', layer: i + 1 }))
   if (s.outfit.gambe) items.push({ garment_id: s.outfit.gambe, zone: 'gambe', layer: 1 })
   if (s.outfit.piedi) items.push({ garment_id: s.outfit.piedi, zone: 'piedi', layer: 1 })
+  // con quale modo è indossato (solo se scelto: la colonna arriva con la migrazione 006)
+  for (const it of items) {
+    const w = s.outfit.wears?.[it.garment_id]
+    if (w) it.wear_id = w
+  }
   // un capo compare una volta sola (chiave primaria outfit + capo)
   return items.filter((it, i) => items.findIndex((x) => x.garment_id === it.garment_id) === i)
 }
@@ -78,6 +84,7 @@ export function stateOf(o: SavedOutfit): CamerinoState {
       gambe: o.outfit_items.find((i) => i.zone === 'gambe')?.garment_id ?? null,
       piedi: o.outfit_items.find((i) => i.zone === 'piedi')?.garment_id ?? null,
       tucked: [],
+      wears: Object.fromEntries(o.outfit_items.filter((i) => i.wear_id).map((i) => [i.garment_id, i.wear_id!])),
     },
     active: { zone: 'busto', layer: 0 },
   }

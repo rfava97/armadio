@@ -2,19 +2,27 @@ import { Sparkles, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useGarments } from '@/features/garments/api'
-import { isOnMeReady, onMeCategory, stopOnMe, useOnMeQueue, useOnMeStarter } from './api'
+import { isWearReady, onMeCategory, stopOnMe, useOnMeQueue, useOnMeStarter, useWears, type OnMeTarget } from './api'
 
 /** Profilo → Camerino: quanti capi sono pronti "su di me" e la preparazione di quelli mancanti. */
 export function OnMeCard() {
   const { data: garments } = useGarments()
   const queue = useOnMeQueue()
   const { bodyPath, start: starter } = useOnMeStarter()
+  const { data: wears, error: wearsError } = useWears()
 
   const eligible = (garments ?? []).filter((g) => onMeCategory(g.category))
-  const ready = eligible.filter((g) => isOnMeReady(g, bodyPath))
-  const missing = eligible.filter((g) => !isOnMeReady(g, bodyPath))
-  const stale = missing.filter((g) => g.on_me_path).length
-  const current = queue.current ? garments?.find((g) => g.id === queue.current) : undefined
+  // un capo è pronto se almeno uno dei suoi modi di indossarlo lo è
+  const ready = eligible.filter((g) => (wears?.get(g.id) ?? []).some((w) => isWearReady(w, bodyPath)))
+  // da preparare: ogni modo non pronto, e i capi che non ne hanno ancora nessuno
+  const missing: OnMeTarget[] = eligible.flatMap((g) => {
+    const list = wears?.get(g.id) ?? []
+    if (!list.length) return [{ garment: g }]
+    return list.filter((w) => !isWearReady(w, bodyPath)).map((w) => ({ garment: g, wear: w }))
+  })
+  const stale = missing.filter((t) => t.wear?.on_me_path).length
+  const currentTarget = queue.current ? missing.find((t) => (t.wear?.id ?? `g:${t.garment.id}`) === queue.current) : undefined
+  const current = currentTarget?.garment
 
   const start = () => starter?.(missing)
 
@@ -41,6 +49,7 @@ export function OnMeCard() {
             decina al giorno con la quota gratuita). La tua foto e quelle dei capi vengono inviate a Hugging Face.
             {stale > 0 && ` ${stale === 1 ? 'Un capo va rifatto' : `${stale} capi vanno rifatti`}: hai cambiato foto.`}
           </p>
+          {wearsError && <p className="text-caption text-danger">{wearsError.message}</p>}
           {queue.running && (
             <p className="flex items-center gap-2 text-caption" role="status">
               <Spinner className="size-4 text-accent" />
@@ -60,9 +69,9 @@ export function OnMeCard() {
             </Button>
           ) : (
             missing.length > 0 && (
-              <Button size="md" onClick={start} disabled={!starter}>
+              <Button size="md" onClick={start} disabled={!starter || !wears}>
                 <Sparkles className="size-4" aria-hidden />
-                Prepara {missing.length === 1 ? 'il capo mancante' : `i ${missing.length} capi mancanti`}
+                Prepara {missing.length === 1 ? 'quello mancante' : `i ${missing.length} mancanti`}
               </Button>
             )
           )}

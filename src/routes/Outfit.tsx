@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Plus, RotateCcw, Search, Shuffle, Sparkles, X } from 'lucide-react'
+import { Heart, Plus, RotateCcw, Search, Shuffle, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
@@ -12,7 +12,19 @@ import { usePreparedBody } from '@/features/outfit/useBodyPhoto'
 import { PickerSheet } from '@/features/outfit/PickerSheet'
 import { TryOnSheet } from '@/features/outfit/TryOnSheet'
 import { setCamerinoSettings, useCamerinoSettings, type CamerinoView } from '@/features/outfit/settings'
-import { isOnMeReady, onMeCategory, useOnMeLayers, useOnMeQueue, useOnMeStarter } from '@/features/onme/api'
+import {
+  chosenWear,
+  isWearReady,
+  onMeCategory,
+  targetKey,
+  useOnMeLayers,
+  useOnMeQueue,
+  useOnMeStarter,
+  useWears,
+  type OnMeTarget,
+  type Wear,
+} from '@/features/onme/api'
+import { SaveOnMeSheet } from '@/features/onme/SaveOnMeSheet'
 import {
   addLayer,
   candidates,
@@ -25,6 +37,7 @@ import {
   sanitize,
   saveState,
   setActiveId,
+  setWear,
   shuffle,
   STAGE_ZONES,
   wear,
@@ -48,10 +61,12 @@ export default function Outfit() {
   const bodyPath = profile?.body_photo_path ?? null
   const photo = useBodyPhotoUrl(bodyPath)
   const body = usePreparedBody(photo.data)
-  const layers = useOnMeLayers(garments, bodyPath)
+  const { data: wearsMap } = useWears()
+  const layers = useOnMeLayers(wearsMap, bodyPath)
   const [state, setState] = useState<CamerinoState | null>(null)
   const [picking, setPicking] = useState(false)
   const [trying, setTrying] = useState(false)
+  const [saving, setSaving] = useState(false)
   const toast = useToast()
   const location = useLocation()
   const navigate = useNavigate()
@@ -78,28 +93,43 @@ export default function Outfit() {
 
   const view: CamerinoView = settings.view === 'sudime' && bodyPath ? 'sudime' : 'tavolo'
 
-  const onMe: OnMeSource | null = useMemo(() => {
-    if (view !== 'sudime' || !body) return null
-    const a = profile?.body_anchors
-    const split: [number, number] = a
-      ? [(a.waist.y + a.hips.y) / 2, (a.ankle_l.y + a.ankle_r.y) / 2 - 0.025]
-      : [0.47, 0.92]
-    return { url: body.url, aspect: body.aspect, split, layers: layers.data ?? new Map() }
-  }, [view, body, profile?.body_anchors, layers.data])
-
   const byId = useMemo(() => new Map((garments ?? []).map((g) => [g.id, g])), [garments])
   const activeGarment: GarmentWithThumb | undefined = state ? byId.get(getActiveId(state) ?? '') : undefined
 
   const update = (fn: (s: CamerinoState) => CamerinoState) => setState((s) => (s ? fn(s) : s))
 
-  // capi dell'outfit che si possono vedere su di te ma non sono ancora pronti
+  /** il modo con cui ogni capo è indossato nel camerino (scelto, o il primo pronto) */
+  const wearOf = (g: GarmentWithThumb): Wear | undefined => chosenWear(wearsMap?.get(g.id), state?.outfit.wears?.[g.id], bodyPath)
+
+  // capi del busto e delle gambe: quelli che si possono vedere su di te
   const worn = state
-    ? [...state.outfit.busto, state.outfit.gambe].map((id) => (id ? byId.get(id) : undefined)).filter((g): g is GarmentWithThumb => !!g)
+    ? [...state.outfit.busto, state.outfit.gambe]
+        .map((id) => (id ? byId.get(id) : undefined))
+        .filter((g): g is GarmentWithThumb => !!g && !!onMeCategory(g.category))
     : []
-  const missing = worn.filter((g) => onMeCategory(g.category) && !isOnMeReady(g, bodyPath))
+  const missing: OnMeTarget[] = worn.filter((g) => !isWearReady(wearOf(g), bodyPath)).map((g) => ({ garment: g, wear: wearOf(g) }))
+  // livello di ogni capo (id capo → URL) e foto indossata del modo scelto
+  const wornWears = worn.map((g) => {
+    const w = wearOf(g)
+    return { id: g.id, url: w && isWearReady(w, bodyPath) ? layers.data?.get(w.id) : undefined, fit: w?.fit_photo_path ?? undefined }
+  })
+  const garmentLayers = new Map(wornWears.filter((x) => x.url).map((x) => [x.id, x.url!] as const))
+  const fitPhotos = new Map(wornWears.filter((x) => x.fit).map((x) => [x.id, x.fit!] as const))
+  const anchors = profile?.body_anchors
+  const onMe: OnMeSource | null =
+    view === 'sudime' && body
+      ? {
+          url: body.url,
+          aspect: body.aspect,
+          split: anchors ? [(anchors.waist.y + anchors.hips.y) / 2, (anchors.ankle_l.y + anchors.ankle_r.y) / 2 - 0.025] : [0.47, 0.92],
+          layers: garmentLayers,
+        }
+      : null
 
   const starter = useOnMeStarter()
-  const prepare = (items: GarmentWithThumb[]) => starter.start?.(items)
+  const prepare = (items: OnMeTarget[]) => starter.start?.(items)
+  const activeWears = activeGarment ? (wearsMap?.get(activeGarment.id) ?? []) : []
+  const activeWear = activeGarment ? wearOf(activeGarment) : undefined
 
   const chooseView = (v: CamerinoView) => {
     if (v === 'sudime' && !bodyPath) {
@@ -139,6 +169,17 @@ export default function Outfit() {
               className="flex size-11 items-center justify-center rounded-full text-accent disabled:opacity-40"
             >
               <Sparkles className="size-5" />
+            </button>
+          )}
+          {view === 'sudime' && (
+            <button
+              type="button"
+              aria-label="Salva nei preferiti"
+              onClick={() => setSaving(true)}
+              disabled={!state || !onMe || garmentLayers.size === 0}
+              className="flex size-11 items-center justify-center rounded-full text-like disabled:opacity-40"
+            >
+              <Heart className="size-5" />
             </button>
           )}
           <button
@@ -281,15 +322,54 @@ export default function Outfit() {
             )}
           </div>
 
+          {/* modi di indossare il capo attivo (es. felpa chiusa / aperta) */}
+          {activeGarment && activeWears.length > 1 && (
+            <div className="mt-2 flex gap-2 overflow-x-auto [scrollbar-width:none]" role="radiogroup" aria-label={`Come indossi ${activeGarment.name}`}>
+              {activeWears.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={activeWear?.id === w.id}
+                  onClick={() => update((s) => setWear(s, activeGarment.id, w.id))}
+                  className={cn(
+                    'h-8 shrink-0 rounded-full px-3 text-caption font-semibold transition-colors',
+                    activeWear?.id === w.id ? 'bg-navy text-on-accent' : 'bg-surface-muted text-fg',
+                  )}
+                >
+                  {w.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <OnMeStatus
             view={view}
             active={activeGarment}
+            activeWear={activeWear}
             zone={state.active.zone}
             missing={missing}
             bodyPath={bodyPath}
             queue={queue}
             onPrepare={prepare}
           />
+
+          {saving && onMe && (
+            <SaveOnMeSheet
+              open
+              onClose={() => setSaving(false)}
+              bodyUrl={onMe.url}
+              layers={[
+                ...(state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? [garmentLayers.get(state.outfit.gambe)!] : []),
+                ...state.outfit.busto
+                  .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
+                  .filter((x): x is { g: GarmentWithThumb; i: number } => !!x.g && garmentLayers.has(x.g.id))
+                  .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
+                  .map((x) => garmentLayers.get(x.g.id)!),
+              ]}
+              state={state}
+            />
+          )}
 
           <TryOnSheet
             open={trying}
@@ -308,6 +388,7 @@ export default function Outfit() {
               .filter((g): g is GarmentWithThumb => !!g)
               .sort((a, b) => a.layer_rank - b.layer_rank)}
             shoes={state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined}
+            fitPhotos={fitPhotos}
             state={state}
           />
           <PickerSheet
@@ -330,6 +411,7 @@ export default function Outfit() {
 function OnMeStatus({
   view,
   active,
+  activeWear,
   zone,
   missing,
   bodyPath,
@@ -338,11 +420,12 @@ function OnMeStatus({
 }: {
   view: CamerinoView
   active: GarmentWithThumb | undefined
+  activeWear: Wear | undefined
   zone: string
-  missing: GarmentWithThumb[]
+  missing: OnMeTarget[]
   bodyPath: string | null
   queue: ReturnType<typeof useOnMeQueue>
-  onPrepare: (items: GarmentWithThumb[]) => void
+  onPrepare: (items: OnMeTarget[]) => void
 }) {
   const line = 'mt-2 flex min-h-11 items-center justify-between gap-3'
   if (view === 'tavolo') {
@@ -352,27 +435,29 @@ function OnMeStatus({
       </div>
     )
   }
-  const busy = (g: GarmentWithThumb) => queue.current === g.id || queue.pending.includes(g.id)
+  const busy = (t: OnMeTarget) => queue.current === targetKey(t) || queue.pending.includes(targetKey(t))
+  const label = (g: GarmentWithThumb, w?: Wear) => (w && w.name !== 'Base' ? `${g.name} (${w.name.toLowerCase()})` : g.name)
   let text: string
-  let action: { label: string; items: GarmentWithThumb[] } | null = null
+  let action: { label: string; items: OnMeTarget[] } | null = null
   if (zone === 'piedi') {
     text = 'Le scarpe si vedono solo sul tavolo: su di te restano quelle della foto.'
   } else if (active && !onMeCategory(active.category)) {
     text = 'Questo capo si vede solo sul tavolo.'
-  } else if (active && !isOnMeReady(active, bodyPath)) {
-    text = busy(active)
-      ? queue.current === active.id
-        ? `Preparo ${active.name} su di te: circa un minuto…`
-        : `${active.name} è in coda.`
-      : `${active.name} non è ancora pronto su di te.`
-    if (!busy(active)) action = { label: 'Prepara', items: [active] }
+  } else if (active && !isWearReady(activeWear, bodyPath)) {
+    const t = { garment: active, wear: activeWear }
+    text = busy(t)
+      ? queue.current === targetKey(t)
+        ? `Preparo ${label(active, activeWear)} su di te: circa un minuto…`
+        : `${label(active, activeWear)} è in coda.`
+      : `${label(active, activeWear)} non è ancora pronto su di te.`
+    if (!busy(t)) action = { label: 'Prepara', items: [t] }
   } else if (missing.length) {
     text = `${missing.length === 1 ? 'Un capo' : `${missing.length} capi`} dell'outfit da preparare.`
     if (!missing.every(busy)) action = { label: 'Prepara', items: missing }
   } else {
     text = queue.running ? 'Preparo altri capi in sottofondo…' : 'Scorri per cambiare capo.'
     // il capo attivo è pronto ma non convince: si può rigenerare
-    if (active && !queue.running) action = { label: 'Rifai', items: [active] }
+    if (active && !queue.running) action = { label: 'Rifai', items: [{ garment: active, wear: activeWear }] }
   }
   // dopo un errore (quota finita, rete…) lo mostro al posto del testo, con "Riprova"
   if (queue.error && !queue.running) {

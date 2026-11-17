@@ -81,14 +81,6 @@ export type Garment = {
   fit_scale: number
   fit_offset_x: number
   fit_offset_y: number
-  /** "Su di me" (migrazione 003): livello nel bucket renders e foto del corpo usata */
-  on_me_path?: string | null
-  on_me_body?: string | null
-  /**
-   * foto del capo indossato da qualcuno (migrazione 005): non si vede nell'armadio, serve al try-on
-   * per copiare vestibilità e chiusura
-   */
-  fit_photo_path?: string | null
   created_at: string
 }
 

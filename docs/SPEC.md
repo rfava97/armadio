@@ -73,7 +73,13 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Nel camerino i livelli si sovrappongono alla foto (pantaloni, poi strati del busto dal più interno): lo swipe resta istantaneo.
 - Capi non ancora pronti: non compaiono, la riga in basso propone "Prepara". Dal Profilo si preparano tutti i capi mancanti in coda (uno alla volta, circa un minuto a capo, una decina al giorno con la quota gratuita).
 - Scarpe e accessori non si vedono su di te: restano quelli della foto.
-- **Foto indossata** (facoltativa, dettaglio capo → "Su di me", colonna `fit_photo_path`, migrazione 005): nell'armadio resta sempre la foto stesa; questa seconda foto, in cui qualcuno porta il capo (oversize, giacca o camicia aperta…), non compare nell'armadio e serve solo al try-on. Se c'è, "Su di me" e "Provalo su di me" la usano con FASHN `garment_photo_type: model`, che copia vestibilità e chiusura; altrimenti la foto stesa con `flat-lay` (capo aderente e chiuso). Salvata ridotta a 1200 px, non scontornata, nel bucket `garments`.
+- **Come lo indossi** (dettaglio capo, tabella `garment_wears`, migrazione 006): ogni maglia o pantalone ha uno o più *modi* (es. felpa "Chiusa" e "Aperta"; per camicie, felpe e giacche sono suggeriti). Ogni modo ha:
+  - una **foto indossata** facoltativa, in cui qualcuno porta il capo così: non compare nell'armadio, serve solo al try-on (FASHN `garment_photo_type: model`, che copia vestibilità e chiusura); senza, si usa la foto stesa (`flat-lay`, capo aderente e chiuso). Ridotta a 1200 px, non scontornata, nel bucket `garments`;
+  - il pulsante **Gemini**, che copia un prompt per far creare a Gemini la foto indossata (un modello qualunque con la tua altezza che porta il capo in quel modo; solo la foto del capo va a Google) e apre l'app Gemini;
+  - il suo livello "Su di me" con **Prepara** / **Rifai**.
+  Un capo senza modi ha il modo implicito "Base" (creato alla prima preparazione o foto). I dati della migrazione 005 diventano il modo "Base".
+- Nel camerino, se il capo attivo ha più modi, sotto il palco compaiono i chip per sceglierlo (es. Chiusa | Aperta); la scelta vale per "Su di me" e "Provalo su di me" e viene salvata con l'outfit (`outfit_items.wear_id`).
+- **Salva da "Su di me"**: nella vista Su di me il cuore nell'header compone l'immagine come si vede (foto + livelli) e la salva nei preferiti con nome e stile, senza generare di nuovo.
 - **Rifai su di me**: dal dettaglio capo o dalla riga sotto il palco, rigenera il capo (sostituisce il livello precedente).
 
 **C. "Provalo su di me" (AI, gratis con limiti)**

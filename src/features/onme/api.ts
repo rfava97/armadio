@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { useSyncExternalStore } from 'react'
 import { useAuth } from '@/auth/context'
 import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
-import { useSyncExternalStore } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Category, Garment } from '@/lib/garments'
 import type { Anchors } from '@/lib/mannequin'
@@ -23,14 +23,56 @@ export function onMeCategory(c: Category): OnMeCategory | null {
   return null
 }
 
-/** Pronto se generato con la foto del corpo in uso. */
-export const isOnMeReady = (g: Garment, bodyPath: string | null | undefined) =>
-  !!bodyPath && !!g.on_me_path && g.on_me_body === bodyPath
+/* ---------- modi di indossare un capo (tabella garment_wears, migrazione 006) ---------- */
 
-/** URL firmati dei livelli pronti, per id del capo. */
-export function useOnMeLayers(garments: Garment[] | undefined, bodyPath: string | null | undefined) {
-  const ready = (garments ?? []).filter((g) => isOnMeReady(g, bodyPath))
-  const paths = ready.map((g) => g.on_me_path!).sort()
+/** Un modo di indossare un capo ("Chiusa", "Aperta"…): foto indossata e livello "Su di me". */
+export type Wear = {
+  id: string
+  garment_id: string
+  name: string
+  fit_photo_path: string | null
+  on_me_path: string | null
+  on_me_body: string | null
+  created_at: string
+}
+
+/** Pronto se generato con la foto del corpo in uso. */
+export const isWearReady = (w: Wear | undefined, bodyPath: string | null | undefined) =>
+  !!w && !!bodyPath && !!w.on_me_path && w.on_me_body === bodyPath
+
+export type WearsByGarment = Map<string, Wear[]>
+
+/** Tutti i modi, per capo (nell'ordine in cui sono stati creati). */
+export function useWears() {
+  const { session } = useAuth()
+  return useQuery({
+    queryKey: ['wears', session?.user.id],
+    enabled: !!session,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    queryFn: async (): Promise<WearsByGarment> => {
+      const { data, error } = await supabase.from('garment_wears').select('*').order('created_at')
+      if (error) throw friendly(error)
+      const map: WearsByGarment = new Map()
+      for (const w of (data ?? []) as Wear[]) map.set(w.garment_id, [...(map.get(w.garment_id) ?? []), w])
+      return map
+    },
+  })
+}
+
+/**
+ * Il modo con cui il capo appare nel camerino: quello scelto se esiste, altrimenti il primo pronto,
+ * altrimenti il primo.
+ */
+export function chosenWear(wears: Wear[] | undefined, chosenId: string | undefined, bodyPath: string | null | undefined) {
+  if (!wears?.length) return undefined
+  return wears.find((w) => w.id === chosenId) ?? wears.find((w) => isWearReady(w, bodyPath)) ?? wears[0]
+}
+
+/** URL firmati dei livelli pronti, per id del modo. */
+export function useOnMeLayers(wears: WearsByGarment | undefined, bodyPath: string | null | undefined) {
+  const ready = [...(wears?.values() ?? [])].flat().filter((w) => isWearReady(w, bodyPath))
+  const paths = ready.map((w) => w.on_me_path!).sort()
   return useQuery({
     queryKey: ['onme', paths],
     enabled: paths.length > 0,
@@ -39,7 +81,7 @@ export function useOnMeLayers(garments: Garment[] | undefined, bodyPath: string 
       const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, SIGNED_TTL)
       if (error) throw error
       const byPath = new Map(data.map((s) => [s.path, s.signedUrl]))
-      return new Map(ready.map((g) => [g.id, byPath.get(g.on_me_path!) ?? '']))
+      return new Map(ready.map((w) => [w.id, byPath.get(w.on_me_path!) ?? '']))
     },
   })
 }
@@ -47,54 +89,64 @@ export function useOnMeLayers(garments: Garment[] | undefined, bodyPath: string 
 function friendly(e: unknown): Error {
   // gli errori di Supabase sono oggetti con message, non sempre istanze di Error
   const msg = (e as { message?: string } | null)?.message ?? String(e)
-  if (/on_me_(path|body)/.test(msg)) {
-    return new Error('Manca la migrazione 003_su_di_me.sql: eseguila nel SQL Editor di Supabase.')
-  }
-  if (/fit_photo_path/.test(msg)) {
-    return new Error('Manca la migrazione 005_foto_indossata.sql: eseguila nel SQL Editor di Supabase.')
+  if (/garment_wears|wear_id/.test(msg)) {
+    return new Error('Manca la migrazione 006_modi_di_indossare.sql: eseguila nel SQL Editor di Supabase.')
   }
   if ((e as { userFacing?: boolean }).userFacing) return e as Error
-  return new Error('Preparazione non riuscita: riprova tra poco.')
+  return new Error('Operazione non riuscita: riprova tra poco.')
 }
 
-/** Genera e salva il livello "su di me" di un capo (sostituisce quello vecchio). */
+/** Messaggio leggibile per gli errori (migrazioni mancanti, rete…). */
+export const friendlyError = (e: unknown) => friendly(e).message
+
+async function createWear(garmentId: string, name: string): Promise<Wear> {
+  const { data, error } = await supabase.from('garment_wears').insert({ garment_id: garmentId, name: name.trim() }).select().single()
+  if (error) throw friendly(error)
+  return data as Wear
+}
+
 type Body = { path: string; url: string; anchors?: Anchors | null }
 
 /** Linea tra busto e gambe sulla foto: poco sopra i fianchi, dove di solito c'è l'elastico. */
 const splitOf = (a?: Anchors | null) => (a ? a.waist.y + (a.hips.y - a.waist.y) * 0.6 : 0.5)
 
-async function prepareOne(g: Garment, body: Body, userId: string) {
+/** Genera e salva il livello "su di me" di un modo (sostituisce quello vecchio). */
+async function prepareOne(g: Garment, w: Wear, body: Body, userId: string) {
   const category = onMeCategory(g.category)
   if (!category) throw new Error('Questo capo non si può vedere su di te.')
   // con la foto indossata il modello copia vestibilità e chiusura; altrimenti usa la foto stesa
-  const worn = !!g.fit_photo_path
   const { layer } = await makeOnMeLayer(
     body.url,
-    await garmentImageUrl(g.fit_photo_path ?? g.image_path),
+    await garmentImageUrl(w.fit_photo_path ?? g.image_path),
     category,
-    worn,
+    !!w.fit_photo_path,
     splitOf(body.anchors),
   )
   const blob = await encodeLayer(layer)
-  const path = `${userId}/onme/${g.id}-${Date.now()}.webp`
+  const path = `${userId}/onme/${g.id}-${w.id}-${Date.now()}.webp`
   const store = supabase.storage.from(BUCKET)
   const up = await store.upload(path, blob, { contentType: 'image/webp', upsert: false })
   if (up.error) throw up.error
-  const { error } = await supabase.from('garments').update({ on_me_path: path, on_me_body: body.path }).eq('id', g.id)
+  const { error } = await supabase.from('garment_wears').update({ on_me_path: path, on_me_body: body.path }).eq('id', w.id)
   if (error) {
     await store.remove([path])
     throw friendly(error)
   }
-  if (g.on_me_path) await store.remove([g.on_me_path])
+  if (w.on_me_path) await store.remove([w.on_me_path])
 }
 
-/* ---------- coda: i capi si preparano uno alla volta, anche cambiando schermata ---------- */
+/* ---------- coda: i modi si preparano uno alla volta, anche cambiando schermata ---------- */
+
+/** Cosa preparare: un modo esistente, oppure un capo senza modi (si crea "Base"). */
+export type OnMeTarget = { garment: Garment; wear?: Wear }
+/** chiave nella coda: id del modo, o "g:<id capo>" per un capo ancora senza modi */
+export const targetKey = (t: OnMeTarget) => t.wear?.id ?? `g:${t.garment.id}`
 
 export type OnMeQueue = {
   running: boolean
-  /** capo in preparazione */
+  /** chiave del modo in preparazione */
   current: string | null
-  /** capi in attesa (id) */
+  /** chiavi in attesa */
   pending: string[]
   done: number
   error: string | null
@@ -102,6 +154,7 @@ export type OnMeQueue = {
 
 let queue: OnMeQueue = { running: false, current: null, pending: [], done: 0, error: null }
 let stopRequested = false
+const targets = new Map<string, OnMeTarget>()
 const listeners = new Set<() => void>()
 const set = (patch: Partial<OnMeQueue>) => {
   queue = { ...queue, ...patch }
@@ -117,31 +170,31 @@ export const useOnMeQueue = () =>
     () => queue,
   )
 
-/** Aggiunge capi alla coda e la avvia se è ferma. */
-export function prepareOnMe(
-  items: Garment[],
-  ctx: { body: Body; userId: string; qc: QueryClient },
-) {
-  const add = items.map((g) => g.id).filter((id) => id !== queue.current && !queue.pending.includes(id))
-  const byId = new Map(items.map((g) => [g.id, g]))
+/** Aggiunge modi alla coda e la avvia se è ferma. */
+export function prepareOnMe(items: OnMeTarget[], ctx: { body: Body; userId: string; qc: QueryClient }) {
+  const add: string[] = []
+  for (const t of items) {
+    const k = targetKey(t)
+    targets.set(k, t)
+    if (k !== queue.current && !queue.pending.includes(k) && !add.includes(k)) add.push(k)
+  }
   if (queue.running) {
     set({ pending: [...queue.pending, ...add] })
-    // i capi aggiunti dopo li ritrovo dalla cache dei capi
     return
   }
   stopRequested = false
   set({ running: true, pending: add, done: 0, error: null })
   void (async () => {
     while (queue.pending.length && !stopRequested) {
-      const [id, ...rest] = queue.pending
-      set({ current: id, pending: rest })
-      const all = ctx.qc.getQueriesData<Garment[]>({ queryKey: ['garments'] }).flatMap(([, d]) => d ?? [])
-      const g = byId.get(id) ?? all.find((x) => x.id === id)
-      if (!g) continue
+      const [k, ...rest] = queue.pending
+      set({ current: k, pending: rest })
+      const t = targets.get(k)
+      if (!t) continue
       try {
-        await prepareOne(g, ctx.body, ctx.userId)
+        const wear = t.wear ?? (await createWear(t.garment.id, 'Base'))
+        await prepareOne(t.garment, wear, ctx.body, ctx.userId)
         set({ done: queue.done + 1 })
-        await ctx.qc.invalidateQueries({ queryKey: ['garments'] })
+        await ctx.qc.invalidateQueries({ queryKey: ['wears'] })
       } catch (e) {
         console.error(e)
         // quota finita, migrazione mancante, rete: mi fermo e lo dico
@@ -153,18 +206,10 @@ export function prepareOnMe(
   })()
 }
 
-/** Ferma la coda dopo il capo in corso (una generazione già partita non si può interrompere). */
+/** Ferma la coda dopo il modo in corso (una generazione già partita non si può interrompere). */
 export function stopOnMe() {
   stopRequested = true
   set({ pending: [] })
-}
-
-/** Messaggio leggibile per gli errori di Supabase legati alle migrazioni. */
-export const friendlyError = (e: unknown) => friendly(e).message
-
-/** Toglie il livello quando il capo viene eliminato. */
-export async function removeOnMe(g: Garment) {
-  if (g.on_me_path) await supabase.storage.from(BUCKET).remove([g.on_me_path])
 }
 
 /** Avvio della preparazione con la foto del corpo in uso (null finché la foto non è pronta). */
@@ -176,21 +221,47 @@ export function useOnMeStarter() {
   const photo = useBodyPhotoUrl(bodyPath)
   const start =
     bodyPath && photo.data && session
-      ? (items: Garment[]) =>
+      ? (items: OnMeTarget[]) =>
           prepareOnMe(items, { body: { path: bodyPath, url: photo.data!, anchors: profile?.body_anchors }, userId: session.user.id, qc })
       : null
   return { bodyPath, start }
 }
 
+/* ---------- modifiche ai modi ---------- */
+
+export function useCreateWear() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ garmentId, name }: { garmentId: string; name: string }) => createWear(garmentId, name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wears'] }),
+  })
+}
+
+/** Elimina un modo con la sua foto indossata e il suo livello. */
+export function useDeleteWear() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (w: Wear) => {
+      const { error } = await supabase.from('garment_wears').delete().eq('id', w.id)
+      if (error) throw friendly(error)
+      if (w.fit_photo_path) await supabase.storage.from('garments').remove([w.fit_photo_path])
+      if (w.on_me_path) await supabase.storage.from(BUCKET).remove([w.on_me_path])
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wears'] }),
+  })
+}
+
 /**
- * Foto indossata del capo (o null per toglierla): ridotta a 1200 px, senza scontornare (al modello
+ * Foto indossata di un modo (o null per toglierla): ridotta a 1200 px, senza scontornare (al modello
  * serve la persona che lo porta), nel bucket garments accanto alla foto del capo.
+ * Per un capo senza modi crea prima "Base".
  */
 export function useSetFitPhoto() {
   const qc = useQueryClient()
   const { session } = useAuth()
   return useMutation({
-    mutationFn: async ({ garment, file }: { garment: Garment; file: Blob | null }) => {
+    mutationFn: async ({ garment, wear, file }: { garment: Garment; wear?: Wear; file: Blob | null }) => {
+      const w = wear ?? (await createWear(garment.id, 'Base'))
       const store = supabase.storage.from('garments')
       let path: string | null = null
       if (file) {
@@ -201,13 +272,23 @@ export function useSetFitPhoto() {
         const up = await store.upload(path, blob, { contentType: 'image/webp', upsert: false })
         if (up.error) throw up.error
       }
-      const { error } = await supabase.from('garments').update({ fit_photo_path: path }).eq('id', garment.id)
+      const { error } = await supabase.from('garment_wears').update({ fit_photo_path: path }).eq('id', w.id)
       if (error) {
         if (path) await store.remove([path])
-        throw new Error(friendlyError(error))
+        throw friendly(error)
       }
-      if (garment.fit_photo_path) await store.remove([garment.fit_photo_path])
+      if (w.fit_photo_path) await store.remove([w.fit_photo_path])
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['garments'] }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wears'] }),
   })
+}
+
+/** File dei modi di un capo, da togliere quando il capo viene eliminato. */
+export async function removeWearFiles(garmentId: string) {
+  const { data } = await supabase.from('garment_wears').select('fit_photo_path, on_me_path').eq('garment_id', garmentId)
+  const rows = (data ?? []) as Pick<Wear, 'fit_photo_path' | 'on_me_path'>[]
+  const fits = rows.map((r) => r.fit_photo_path).filter((p): p is string => !!p)
+  const layers = rows.map((r) => r.on_me_path).filter((p): p is string => !!p)
+  if (fits.length) await supabase.storage.from('garments').remove(fits)
+  if (layers.length) await supabase.storage.from(BUCKET).remove(layers)
 }
