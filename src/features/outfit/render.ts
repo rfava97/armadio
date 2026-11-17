@@ -42,10 +42,7 @@ const HEM: Partial<Record<Category, number>> = {
 }
 
 const sub = (a: P, b: P): P => ({ x: a.x - b.x, y: a.y - b.y })
-const mul = (a: P, k: number): P => ({ x: a.x * k, y: a.y * k })
 const len = (a: P) => Math.hypot(a.x, a.y)
-const norm = (a: P): P => mul(a, 1 / (len(a) || 1))
-const perp = (a: P): P => ({ x: -a.y, y: a.x })
 const mid = (a: P, b: P): P => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 })
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
@@ -53,23 +50,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 type M = [number, number, number, number, number, number]
 const apply = (m: M, q: P): P => ({ x: m[0] * q.x + m[2] * q.y + m[4], y: m[1] * q.x + m[3] * q.y + m[5] })
 
-/**
- * Porta un pezzo del capo lungo un segmento del corpo: il punto `p` del capo va in `S`, il suo
- * asse `a` si allinea alla direzione `D`; lungo l'asse scala `along`, di traverso `across`.
- */
-function axisMatrix(p: P, a: P, S: P, D: P, along: number, across: number): M {
-  const ap = perp(a)
-  const Dp = perp(D)
-  const m11 = along * D.x * a.x + across * Dp.x * ap.x
-  const m12 = along * D.x * a.y + across * Dp.x * ap.y
-  const m21 = along * D.y * a.x + across * Dp.y * ap.x
-  const m22 = along * D.y * a.y + across * Dp.y * ap.y
-  return [m11, m21, m12, m22, S.x - (m11 * p.x + m12 * p.y), S.y - (m21 * p.x + m22 * p.y)]
-}
-
 type Piece = {
-  /** le maniche vanno su un livello a parte, con un'ombra che le stacca dal busto */
-  sleeve?: boolean
   m: M
   /** rettangolo del capo (colonne/righe) da disegnare */
   rect: [number, number, number, number]
@@ -95,29 +76,13 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
     const hips = mid(sk.hipL, sk.hipR).y
     const ankle = mid(sk.ankleL, sk.ankleR).y
     const hem = hips + (ankle - hips) * (HEM[L.category] ?? 0.1) * fit.scale
-    const natural = ay + (t.torso.bottom - g.y) * s
+    const natural = ay + (d.h - g.y) * s
     const sy = natural > hem ? Math.max(0.7, (hem - ay) / (natural - ay)) : 1
-    const torso: M = [s, 0, 0, s * sy, a.x - g.x * s, ay - g.y * s * sy]
     shift = { x: fit.ox * d.w * s, y: fit.oy * d.h * s * sy }
 
+    // il capo intero (busto e maniche) in un pezzo; se è infilato si ferma alla vita dei pantaloni
     const maxY = L.tuckY !== undefined ? clamp(g.y + (L.tuckY - ay) / (s * sy), 0, d.h) : d.h
-    pieces.push({ m: torso, rect: [t.torso.left, 0, t.torso.right - t.torso.left, maxY] })
-
-    for (const sl of t.sleeves) {
-      const left = sl.pivot.x < g.x
-      const wrist = left ? sk.wristL : sk.wristR
-      const S0 = apply(torso, sl.pivot)
-      const arm = len(sub(wrist, S0))
-      const natural = sl.length * s
-      // maniche lunghe: il polsino arriva al polso; maniche corte: restano corte
-      const k = natural > arm * 0.55 ? clamp(arm / natural, 0.75, 1.35) : 1
-      // manica rigida, dalla spalla verso il polso
-      pieces.push({
-        sleeve: true,
-        m: axisMatrix(sl.pivot, sl.axis, S0, norm(sub(wrist, S0)), s * k, s),
-        rect: [sl.from, 0, sl.to - sl.from, d.h],
-      })
-    }
+    pieces.push({ m: [s, 0, 0, s * sy, a.x - g.x * s, ay - g.y * s * sy], rect: [0, 0, d.w, maxY] })
   } else if (L.zone === 'gambe' && d.bottom) {
     const b = d.bottom
     const hipW = L.hipWidth > 0 ? L.hipWidth : shoulders * 0.95
@@ -141,16 +106,6 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
     shift = { x: fit.ox * width, y: fit.oy * height }
   }
 
-  // le maniche si disegnano su una tela a parte e poi sopra il busto con un'ombra leggera
-  let sleeveCtx: CanvasRenderingContext2D | null = null
-  if (ctx && pieces.some((p) => p.sleeve)) {
-    const off = document.createElement('canvas')
-    off.width = ctx.canvas.width
-    off.height = ctx.canvas.height
-    sleeveCtx = off.getContext('2d')
-    sleeveCtx?.setTransform(ctx.getTransform())
-  }
-
   // riquadro occupato e disegno
   let x0 = Infinity
   let y0 = Infinity
@@ -170,9 +125,7 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
       x1 = Math.max(x1, r.x)
       y1 = Math.max(y1, r.y)
     }
-    const target = pc.sleeve && sleeveCtx ? sleeveCtx : ctx
-    if (target) {
-      const ctx = target
+    if (ctx) {
       ctx.save()
       ctx.translate(shift.x, shift.y)
       ctx.transform(...pc.m)
@@ -182,14 +135,6 @@ export function layoutGarment(L: GarmentLayout, ctx?: CanvasRenderingContext2D):
       ctx.drawImage(d.canvas, 0, 0)
       ctx.restore()
     }
-  }
-  if (ctx && sleeveCtx) {
-    ctx.save()
-    ctx.setTransform(1, 0, 0, 1, 0, 0)
-    ctx.shadowColor = 'rgba(11, 31, 68, 0.35)'
-    ctx.shadowBlur = 5
-    ctx.drawImage(sleeveCtx.canvas, 0, 0)
-    ctx.restore()
   }
   return { left: x0 + shift.x, top: y0 + shift.y, width: x1 - x0, height: y1 - y0 }
 }

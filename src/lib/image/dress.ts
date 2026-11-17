@@ -4,9 +4,6 @@ import type { Category } from '@/lib/garments'
 
 export type P = { x: number; y: number }
 
-/** Una manica: colonne che occupa, attaccatura (perno), direzione verso il polsino e lunghezza. */
-export type Sleeve = { from: number; to: number; pivot: P; axis: P; length: number }
-
 /** Un capo analizzato: immagine pulita + i pezzi da adattare al corpo (px dell'immagine). */
 export type Dressed = {
   canvas: HTMLCanvasElement
@@ -15,11 +12,9 @@ export type Dressed = {
   h: number
   kind: 'top' | 'bottom' | 'shoes'
   top?: {
+    /** attaccatura delle maniche (o bordi del busto) */
     shoulderL: P
     shoulderR: P
-    /** colonne del busto e orlo */
-    torso: { left: number; right: number; bottom: number }
-    sleeves: Sleeve[] // 0, 1 o 2 (sinistra e destra dell'immagine)
   }
   bottom?: {
     waist: { cx: number; width: number }
@@ -102,8 +97,8 @@ async function build(src: string, category: Category): Promise<Dressed> {
 }
 
 /**
- * Maglie e giacche stese: il busto sono le colonne alte quasi quanto il capo, il resto sono
- * maniche. Per ogni manica trovo il perno (la spalla), la direzione e la lunghezza.
+ * Maglie e giacche stese: il busto sono le colonne alte quasi quanto il capo, ai lati ci sono le
+ * maniche. Le spalle sono gli angoli in alto del busto.
  */
 function analyzeTop(w: number, h: number, opaque: (x: number, y: number) => boolean): NonNullable<Dressed['top']> {
   const colCount = new Uint32Array(w)
@@ -121,56 +116,18 @@ function analyzeTop(w: number, h: number, opaque: (x: number, y: number) => bool
 
   const torsoW = tr - tl
   if (torsoW < w * 0.25 || torsoW > w * 0.85) {
-    // canotta o forma non riconosciuta: tutto busto, niente maniche
-    const l = Math.round(w * 0.2)
-    const r = Math.round(w * 0.8)
-    return {
-      shoulderL: { x: l, y: topAt(l) },
-      shoulderR: { x: r, y: topAt(r) },
-      torso: { left: 0, right: w, bottom: h },
-      sleeves: [],
-    }
+    // canotta o forma non riconosciuta: spalle a una distanza tipica
+    tl = Math.round(w * 0.2)
+    tr = Math.round(w * 0.8)
+    return { shoulderL: { x: tl, y: topAt(tl) }, shoulderR: { x: tr, y: topAt(tr) } }
   }
-
-  const pivotL: P = { x: tl, y: topAt(tl) + h * 0.03 }
-  const pivotR: P = { x: tr, y: topAt(tr) + h * 0.03 }
-
-  const sleeve = (from: number, to: number, pivot: P): Sleeve | null => {
-    let sx = 0
-    let sy = 0
-    let n = 0
-    for (let x = from; x < to; x++) {
-      for (let y = 0; y < h; y++) {
-        if (opaque(x, y)) {
-          sx += x
-          sy += y
-          n++
-        }
-      }
-    }
-    if (n < w * h * 0.01) return null
-    const dx = sx / n - pivot.x
-    const dy = sy / n - pivot.y
-    const len = Math.hypot(dx, dy) || 1
-    const axis = { x: dx / len, y: dy / len }
-    let length = 0
-    for (let x = from; x < to; x++) {
-      for (let y = 0; y < h; y++) {
-        if (opaque(x, y)) length = Math.max(length, (x - pivot.x) * axis.x + (y - pivot.y) * axis.y)
-      }
-    }
-    return { from, to, pivot, axis, length }
-  }
-
   return {
-    shoulderL: pivotL,
-    shoulderR: pivotR,
-    torso: { left: tl, right: tr + 1, bottom: h },
-    sleeves: [sleeve(0, tl, pivotL), sleeve(tr + 1, w, pivotR)].filter((s): s is Sleeve => !!s),
+    shoulderL: { x: tl, y: topAt(tl) + h * 0.03 },
+    shoulderR: { x: tr, y: topAt(tr) + h * 0.03 },
   }
 }
 
-/** Pantaloni: vita (bordo superiore), cavallo (dove le gambe si separano) e asse di ogni gamba. */
+/** Pantaloni: vita (bordo superiore). */
 function analyzeBottom(w: number, h: number, opaque: (x: number, y: number) => boolean): NonNullable<Dressed['bottom']> {
   const span = (y: number, from = 0, to = w): [number, number] | null => {
     let l = -1
