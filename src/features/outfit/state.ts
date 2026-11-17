@@ -18,6 +18,19 @@ export type Outfit = {
   busto: (string | null)[]
   gambe: string | null
   piedi: string | null
+  /** capi del busto infilati nei pantaloni */
+  tucked?: string[]
+}
+
+/** Si possono infilare nei pantaloni solo i capi interni. */
+export const TUCKABLE: Category[] = ['maglie', 'camicie', 'canotte']
+
+export function toggleTuck(s: CamerinoState, id: string): CamerinoState {
+  const tucked = s.outfit.tucked ?? []
+  return {
+    ...s,
+    outfit: { ...s.outfit, tucked: tucked.includes(id) ? tucked.filter((x) => x !== id) : [...tucked, id] },
+  }
 }
 
 export type Active = { zone: StageZone; layer: number }
@@ -56,7 +69,12 @@ export function sanitize(s: CamerinoState, garments: Garment[]): CamerinoState {
   const ids = new Set(garments.map((g) => g.id))
   const keep = (id: string | null) => (id && ids.has(id) ? id : null)
   const busto = s.outfit.busto.slice(0, MAX_LAYERS).map(keep)
-  const outfit = { busto: busto.length ? busto : [null], gambe: keep(s.outfit.gambe), piedi: keep(s.outfit.piedi) }
+  const outfit = {
+    busto: busto.length ? busto : [null],
+    gambe: keep(s.outfit.gambe),
+    piedi: keep(s.outfit.piedi),
+    tucked: (s.outfit.tucked ?? []).filter((id) => ids.has(id)),
+  }
   const layer = s.active.zone === 'busto' ? Math.min(s.active.layer, outfit.busto.length - 1) : 0
   return { outfit, active: { zone: s.active.zone, layer: Math.max(0, layer) } }
 }

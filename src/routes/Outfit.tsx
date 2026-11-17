@@ -26,6 +26,8 @@ import {
   setActiveId,
   shuffle,
   STAGE_ZONES,
+  toggleTuck,
+  TUCKABLE,
   wear,
   ZONE_LABEL,
   type CamerinoState,
@@ -279,9 +281,23 @@ export default function Outfit() {
             </div>
           ) : (
             <div className="mt-1 flex items-center justify-between gap-2">
-              <p className="text-caption text-fg-muted">
-                {state.outfit.busto.length < MAX_LAYERS ? 'Tieni premuto per aggiungere uno strato' : 'Scorri per cambiare capo'}
+              <p className="min-w-0 text-caption text-fg-muted">
+                {state.outfit.busto.length < MAX_LAYERS ? 'Tieni premuto per un nuovo strato' : 'Scorri per cambiare capo'}
               </p>
+              <div className="flex shrink-0 items-center gap-1">
+              {activeGarment && TUCKABLE.includes(activeGarment.category) && state.outfit.gambe && (
+                <button
+                  type="button"
+                  aria-pressed={(state.outfit.tucked ?? []).includes(activeGarment.id)}
+                  onClick={() => update((s) => toggleTuck(s, activeGarment.id))}
+                  className={cn(
+                    'flex h-9 shrink-0 items-center rounded-full px-3 text-caption font-semibold',
+                    (state.outfit.tucked ?? []).includes(activeGarment.id) ? 'bg-accent text-on-accent' : 'bg-surface-muted text-fg',
+                  )}
+                >
+                  Dentro i pantaloni
+                </button>
+              )}
               {activeGarment && (
                 <button
                   type="button"
@@ -292,6 +308,7 @@ export default function Outfit() {
                   Regola
                 </button>
               )}
+              </div>
             </div>
           )}
 

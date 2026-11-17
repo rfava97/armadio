@@ -5,7 +5,7 @@ import { Mannequin } from '@/components/Mannequin'
 import type { Anchors, Measures } from '@/lib/mannequin'
 import type { GarmentWithThumb, Fit } from '@/features/garments/api'
 import { dressGarment, type Dressed } from '@/lib/image/dress'
-import { placeGarment, type Box } from './placement'
+import { placeGarment, tuckLine, type Box } from './placement'
 import { getActiveId, MAX_LAYERS, neighbor, type CamerinoState, type StageZone } from './state'
 import { cn } from '@/lib/utils'
 
@@ -40,29 +40,40 @@ function zoneAt(y: number, a: Anchors): StageZone {
 }
 
 /**
- * Ritaglio di testa e collo (clip-path in % dell'avatar): tutto sopra il mento, più il collo
- * fino alla sua base con una curva a U, come lo scollo di una maglia.
+ * Ritaglio di testa e collo (clip-path in % dell'avatar): la testa (larga circa quanto lei, così
+ * cappucci e colletti alti restano visibili ai lati) e il collo fino a poco sopra la sua base,
+ * chiuso da una curva come uno scollo. Il colletto della maglia copre la base del collo.
  */
 function headClip(a: Anchors, w: number, h: number): string {
   const sd = Math.hypot((a.shoulder_r.x - a.shoulder_l.x) * w, (a.shoulder_r.y - a.shoulder_l.y) * h)
   const nx = a.neck.x * w
   const ny = a.neck.y * h
-  const half = sd * 0.15 // mezza larghezza del collo
-  const chin = ny - sd * 0.3
+  const head = sd * 0.42
+  const half = sd * 0.13 // mezza larghezza del collo
+  const chin = ny - sd * 0.32
   const pts: [number, number][] = [
-    [0, 0],
-    [w, 0],
-    [w, chin],
-    [nx + half, chin],
-    [nx + half, ny - sd * 0.02],
-    [nx + half * 0.55, ny + sd * 0.025],
-    [nx, ny + sd * 0.035],
-    [nx - half * 0.55, ny + sd * 0.025],
-    [nx - half, ny - sd * 0.02],
-    [nx - half, chin],
-    [0, chin],
+    [nx - head, 0],
+    [nx + head, 0],
+    [nx + head, chin],
+    [nx + half, chin + sd * 0.04],
+    [nx + half, ny - sd * 0.07],
+    [nx + half * 0.6, ny - sd * 0.03],
+    [nx, ny - sd * 0.015],
+    [nx - half * 0.6, ny - sd * 0.03],
+    [nx - half, ny - sd * 0.07],
+    [nx - half, chin + sd * 0.04],
+    [nx - head, chin],
   ]
   return `polygon(${pts.map(([x, y]) => `${((x / w) * 100).toFixed(2)}% ${((y / h) * 100).toFixed(2)}%`).join(', ')})`
+}
+
+/** Clip-path che nasconde il busto di una maglia infilata sotto la vita (le maniche restano). */
+function tuckClip(d: Dressed, b: Box, cutY: number): string | undefined {
+  if (!d.torso) return undefined
+  const cut = Math.max(0, Math.min(100, ((cutY - b.top) / b.height) * 100))
+  const l = (d.torso.left / d.w) * 100
+  const r = (d.torso.right / d.w) * 100
+  return `polygon(0% 0%, 100% 0%, 100% 100%, ${r}% 100%, ${r}% ${cut}%, ${l}% ${cut}%, ${l}% 100%, 0% 100%)`
 }
 
 export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer }: Props) {
@@ -268,7 +279,8 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
   return (
     <div
       ref={stage}
-      className="relative h-full w-full touch-none overflow-hidden select-none"
+      // le immagini non reagiscono al tocco: niente menu "salva immagine", niente selezione
+      className="relative h-full w-full touch-none overflow-hidden select-none [-webkit-touch-callout:none] [&_img]:pointer-events-none [&_img]:select-none"
       {...handlers}
       onPointerDown={(e) => {
         handlers.onPointerDown?.(e)
@@ -287,12 +299,16 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
         cancelPress()
       }}
     >
-      {/* alone sulla zona attiva */}
+      {/* quando cambia zona, un alone breve la indica e poi sparisce */}
       {av.w > 0 && !adjust && (
-        <div
+        <motion.div
+          key={activeZone}
           aria-hidden
-          className="absolute rounded-[28px] border border-accent/25 bg-accent/5 transition-all duration-300"
+          className="pointer-events-none absolute rounded-[28px] bg-accent/10"
           style={zoneBand}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: [0, 1, 0] }}
+          transition={{ duration: 0.9, times: [0, 0.25, 1] }}
         />
       )}
 
@@ -309,7 +325,11 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
         const active = isActive(w)
         const b = boxFor(w.g, w.zone, active ? adjust : null)
         if (!b) return null
-        const img = <img src={dressed[w.g.id].url} alt={w.g.name} className="h-full w-full" draggable={false} />
+        const tucked = w.zone === 'busto' && !!state.outfit.gambe && (state.outfit.tucked ?? []).includes(w.g.id)
+        const clipPath = tucked ? tuckClip(dressed[w.g.id], b, av.top + tuckLine(avatar.anchors, av.h)) : undefined
+        const img = (
+          <img src={dressed[w.g.id].url} alt={w.g.name} className="h-full w-full" draggable={false} style={{ clipPath }} />
+        )
         if (!active) {
           return (
             <div key={w.g.id + w.zone + w.layer} className="pointer-events-none absolute" style={{ ...b, zIndex: w.z, filter: SHADOW }}>

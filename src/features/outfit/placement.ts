@@ -20,6 +20,21 @@ const EASE: Record<string, number> = {
 type Fit = Pick<Garment, 'category' | 'fit_scale' | 'fit_offset_x' | 'fit_offset_y'>
 
 /**
+ * Dove cade l'orlo, in frazione del tratto fianchi → caviglie sotto i fianchi. Le foto stese
+ * allungano il capo rispetto al corpo: se l'orlo scende oltre, accorcio il capo in altezza.
+ */
+const HEM: Record<string, number> = {
+  canotte: 0.08,
+  maglie: 0.12,
+  camicie: 0.16,
+  felpe_maglioni: 0.12,
+  giacche_cappotti: 0.2,
+}
+
+/** Riga (px dell'avatar) dove una maglia infilata sparisce nei pantaloni. */
+export const tuckLine = (a: Anchors, h: number) => (a.waist.y + (a.hips.y - a.waist.y) * 0.35) * h
+
+/**
  * Riquadro (px, rispetto all'avatar w×h) di un capo già "vestito" (SPEC 2.3):
  * - busto: le spalle del capo sulle spalle dell'avatar, busto largo come le spalle × agio;
  * - gambe: vita del capo larga come i fianchi, dalla vita alle caviglie;
@@ -45,7 +60,13 @@ export function placeGarment(g: Fit, zone: StageZone, dressed: Dressed, a: Ancho
     const gy = (gl.y + gr.y) / 2
     const ax = (sl.x + sr.x) / 2
     const ay = (sl.y + sr.y) / 2 - shoulders * 0.03 // la cucitura sta appena sopra il punto della spalla
-    box = { left: ax - gx * s, top: ay - gy * s, width: dressed.w * s, height: dressed.h * s }
+    // lunghezza: orlo atteso poco sotto i fianchi (la vestibilità salvata la scala insieme al resto)
+    const hips = a.hips.y * h
+    const ankle = ((a.ankle_l.y + a.ankle_r.y) / 2) * h
+    const hem = hips + (ankle - hips) * (HEM[g.category] ?? 0.12) * fit
+    const natural = ay + ((dressed.torso?.bottom ?? dressed.h) - gy) * s
+    const sy = natural > hem ? Math.max(0.7, (hem - ay) / (natural - ay)) : 1
+    box = { left: ax - gx * s, top: ay - gy * s * sy, width: dressed.w * s, height: dressed.h * s * sy }
   } else if (zone === 'gambe' && dressed.waist) {
     const hips = (hipWidth > 0 ? hipWidth * w : shoulders * 0.95) * 1.06 * fit
     const sx = hips / dressed.waist.width

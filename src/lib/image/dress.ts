@@ -13,6 +13,8 @@ export type Dressed = {
   /** top: spalle del capo (attaccatura delle maniche) */
   shoulderL?: P
   shoulderR?: P
+  /** top: colonne del busto (senza maniche) e suo orlo, per accorciarlo o infilarlo nei pantaloni */
+  torso?: { left: number; right: number; bottom: number }
   /** bottom: vita (bordo superiore) */
   waist?: { y: number; cx: number; width: number }
 }
@@ -157,6 +159,7 @@ async function dressTop(src: HTMLCanvasElement): Promise<Dressed> {
       kind: 'top',
       shoulderL: { x: l, y: topAt(l) },
       shoulderR: { x: r, y: topAt(r) },
+      torso: { left: 0, right: w, bottom: h },
     }
   }
 
@@ -228,5 +231,6 @@ async function dressTop(src: HTMLCanvasElement): Promise<Dressed> {
     kind: 'top',
     shoulderL: shift(pivotL),
     shoulderR: shift(pivotR),
+    torso: { left: tl + pad + dx, right: tr + pad + dx + 1, bottom: h + pad + dy },
   }
 }
