@@ -51,7 +51,8 @@ const MODELS: Model[] = [
     name: 'FASHN VTON 1.5',
     host: 'https://fashn-ai-fashn-vton-1-5.hf.space',
     api: 'try_on',
-    data: (p, g, c, photo) => [p, g, c, photo, 30, 1.5, 42, true],
+    // 50 passaggi (il massimo): più lento, ma il capo esce più fedele
+    data: (p, g, c, photo) => [p, g, c, photo, 50, 1.5, 42, true],
   },
   {
     // MIT; "dress_code" gestisce anche pantaloni e gonne
@@ -63,7 +64,7 @@ const MODELS: Model[] = [
       p,
       g,
       'False',
-      30,
+      50,
       2.5,
       42,
       c === 'bottoms' ? 'dress_code' : 'viton_hd',
@@ -226,7 +227,8 @@ Deno.serve(async (req) => {
         new Response(r.bytes, { headers: { ...cors, 'Content-Type': r.type, 'x-tryon-model': m.name, 'Cache-Control': 'no-store' } })
       try {
         return ok(await runModel(m, person, garment, category, photo, deadline))
-      } catch (e) {
+      } catch (first) {
+        let e = first
         // rifiuto senza spiegazioni con il token: riprovo con la quota anonima
         if (!(e instanceof HttpError) && SILENT.test(String((e as Error)?.message)) && Deno.env.get('HF_TOKEN')) {
           silent++

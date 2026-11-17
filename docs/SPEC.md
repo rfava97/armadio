@@ -83,6 +83,12 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Quota gratuita: pochi minuti di GPU al giorno (circa 5 con un account HF gratuito, meno senza). 20–60 s per generazione.
 - Privacy: foto del corpo e dei capi vengono inviate a Hugging Face; l'interfaccia lo dice prima di generare.
 - Il risultato si può salvare come immagine e nei preferiti.
+- FASHN e Leffa girano a 50 passaggi (il massimo): più lenti, risultato più fedele.
+
+**D. "Prova con Gemini" (sperimentale, manuale)**
+- Nel foglio "Provalo su di me", sezione a parte. L'app non chiama nessuna API: con "Condividi" copia un prompt in inglese e apre la condivisione dell'iPhone con la foto del corpo (con il 6% di margine) e le foto di tutti i capi dell'outfit (strati del busto dal più interno, pantaloni, scarpe; la foto indossata se c'è). L'utente le manda all'app Gemini gratuita, che capisce la vestibilità a parole ("Come vuoi indossarli").
+- "Importa risultato": l'immagine viene riportata alla composizione inviata; la testa originale viene cercata nel risultato (correlazione normalizzata, piccoli spostamenti e scale) e, se combacia, rimessa al suo posto con bordi sfumati. Se non combacia, o la somiglianza è bassa, un avviso dice di controllare che l'aspetto sia rimasto lo stesso.
+- Si salva nei preferiti come gli altri risultati.
 
 ### 2.4 Salva outfit (bottom sheet "Salva nei tuoi preferiti")
 - Anteprima dell'outfit (snapshot PNG del canvas avatar, generato client-side).
