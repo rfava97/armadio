@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useQueryClient } from '@tanstack/react-query'
 import { Plus, RotateCcw, Search, Shuffle, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
-import { useAuth } from '@/auth/context'
 import { cn } from '@/lib/utils'
 import { useGarments, type GarmentWithThumb } from '@/features/garments/api'
 import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
@@ -14,7 +12,7 @@ import { usePreparedBody } from '@/features/outfit/useBodyPhoto'
 import { PickerSheet } from '@/features/outfit/PickerSheet'
 import { TryOnSheet } from '@/features/outfit/TryOnSheet'
 import { setCamerinoSettings, useCamerinoSettings, type CamerinoView } from '@/features/outfit/settings'
-import { isOnMeReady, onMeCategory, prepareOnMe, useOnMeLayers, useOnMeQueue } from '@/features/onme/api'
+import { isOnMeReady, onMeCategory, useOnMeLayers, useOnMeQueue, useOnMeStarter } from '@/features/onme/api'
 import {
   addLayer,
   candidates,
@@ -44,8 +42,6 @@ const VIEWS: { key: CamerinoView; label: string }[] = [
 export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
   const { data: profile } = useProfile()
-  const { session } = useAuth()
-  const qc = useQueryClient()
   const settings = useCamerinoSettings()
   const queue = useOnMeQueue()
   // la foto serve per "Su di me" e per "Provalo su di me"
@@ -102,10 +98,8 @@ export default function Outfit() {
     : []
   const missing = worn.filter((g) => onMeCategory(g.category) && !isOnMeReady(g, bodyPath))
 
-  const prepare = (items: GarmentWithThumb[]) => {
-    if (!bodyPath || !photo.data || !session) return
-    prepareOnMe(items, { body: { path: bodyPath, url: photo.data }, userId: session.user.id, qc })
-  }
+  const starter = useOnMeStarter()
+  const prepare = (items: GarmentWithThumb[]) => starter.start?.(items)
 
   const chooseView = (v: CamerinoView) => {
     if (v === 'sudime' && !bodyPath) {

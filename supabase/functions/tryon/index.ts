@@ -87,14 +87,20 @@ function decodeImage(b64: unknown): Uint8Array {
   }
 }
 
-async function isRunning(m: Model): Promise<boolean> {
+/**
+ * Il modello si può chiamare? Acceso, oppure addormentato (la chiamata lo sveglia, ci mette un po').
+ * In pausa, in errore o in ricostruzione: no.
+ */
+async function isAvailable(m: Model): Promise<boolean> {
   try {
     const r = await fetch(`https://huggingface.co/api/spaces/${m.id}`, { signal: AbortSignal.timeout(8000) })
-    if (!r.ok) return false
+    if (!r.ok) return true // stato non leggibile: provo comunque
     const info = await r.json()
-    return info?.runtime?.stage === 'RUNNING'
+    const stage = info?.runtime?.stage
+    console.log(m.id, 'stato', stage)
+    return stage === 'RUNNING' || stage === 'SLEEPING' || stage === 'RUNNING_APP_STARTING'
   } catch {
-    return false
+    return true
   }
 }
 
@@ -140,7 +146,8 @@ async function waitResult(m: Model, eventId: string, deadline: number): Promise<
         if (event === 'error') {
           await reader.cancel()
           const msg = data && data !== 'null' ? data : ''
-          if (/quota|exceeded|GPU/i.test(msg)) {
+          // "You have exceeded your GPU quota": finita per oggi. "No GPU available": solo occupato.
+          if (/quota|exceeded/i.test(msg)) {
             throw new HttpError(429, 'Quota gratuita di Hugging Face finita per oggi: riprova domani.')
           }
           throw new Error(`errore del modello ${msg}`)
@@ -196,7 +203,7 @@ Deno.serve(async (req) => {
     let lastError: unknown = null
     for (const m of MODELS) {
       if (Date.now() > deadline - 30_000) break
-      if (!(await isRunning(m))) continue
+      if (!(await isAvailable(m))) continue
       try {
         const { bytes, type } = await runModel(m, person, garment, category, photo, deadline)
         return new Response(bytes, { headers: { ...cors, 'Content-Type': type, 'x-tryon-model': m.name, 'Cache-Control': 'no-store' } })
@@ -209,7 +216,10 @@ Deno.serve(async (req) => {
     if (lastError instanceof DOMException && lastError.name === 'TimeoutError') {
       throw new HttpError(504, 'Hugging Face è molto occupato in questo momento: riprova tra qualche minuto.')
     }
-    throw new HttpError(503, 'Nessun modello di prova disponibile adesso: riprova più tardi.')
+    throw new HttpError(
+      503,
+      'I modelli gratuiti di Hugging Face sono occupati o in pausa in questo momento: riprova tra qualche minuto.',
+    )
   } catch (e) {
     if (e instanceof HttpError) return fail(e.status, e.message)
     console.error(e)

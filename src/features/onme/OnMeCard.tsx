@@ -1,21 +1,14 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { Sparkles, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
-import { useAuth } from '@/auth/context'
 import { useGarments } from '@/features/garments/api'
-import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
-import { isOnMeReady, onMeCategory, prepareOnMe, stopOnMe, useOnMeQueue } from './api'
+import { isOnMeReady, onMeCategory, stopOnMe, useOnMeQueue, useOnMeStarter } from './api'
 
 /** Profilo → Camerino: quanti capi sono pronti "su di me" e la preparazione di quelli mancanti. */
 export function OnMeCard() {
   const { data: garments } = useGarments()
-  const { data: profile } = useProfile()
-  const { session } = useAuth()
-  const qc = useQueryClient()
   const queue = useOnMeQueue()
-  const bodyPath = profile?.body_photo_path ?? null
-  const photo = useBodyPhotoUrl(bodyPath)
+  const { bodyPath, start: starter } = useOnMeStarter()
 
   const eligible = (garments ?? []).filter((g) => onMeCategory(g.category))
   const ready = eligible.filter((g) => isOnMeReady(g, bodyPath))
@@ -23,10 +16,7 @@ export function OnMeCard() {
   const stale = missing.filter((g) => g.on_me_path).length
   const current = queue.current ? garments?.find((g) => g.id === queue.current) : undefined
 
-  const start = () => {
-    if (!bodyPath || !photo.data || !session) return
-    prepareOnMe(missing, { body: { path: bodyPath, url: photo.data }, userId: session.user.id, qc })
-  }
+  const start = () => starter?.(missing)
 
   return (
     <div className="flex flex-col gap-3 rounded-card border border-border bg-surface p-5">
@@ -70,7 +60,7 @@ export function OnMeCard() {
             </Button>
           ) : (
             missing.length > 0 && (
-              <Button size="md" onClick={start} disabled={!photo.data}>
+              <Button size="md" onClick={start} disabled={!starter}>
                 <Sparkles className="size-4" aria-hidden />
                 Prepara {missing.length === 1 ? 'il capo mancante' : `i ${missing.length} capi mancanti`}
               </Button>

@@ -21,7 +21,7 @@ const THRESHOLD = 28
 export type OnMeCategory = 'tops' | 'bottoms'
 
 /** Foto del corpo su fondo pieno con il margine, come la riceve il modello. */
-async function flattenBody(src: string): Promise<HTMLCanvasElement> {
+async function flattenBody(src: string): Promise<{ canvas: HTMLCanvasElement; pad: number; height: number }> {
   const blob = await (await fetch(src)).blob()
   const bmp = await createImageBitmap(blob)
   const k = Math.min(1, 1024 / Math.max(bmp.width, bmp.height))
@@ -34,7 +34,7 @@ async function flattenBody(src: string): Promise<HTMLCanvasElement> {
   ctx.fillRect(0, 0, c.width, c.height)
   ctx.drawImage(bmp, pad, pad, w, h)
   bmp.close()
-  return c
+  return { canvas: c, pad, height: h }
 }
 
 /** Somma su una finestra (2r+1) in orizzontale e in verticale: media locale senza librerie. */
@@ -97,13 +97,25 @@ function fillHoles(m: Uint8Array, w: number, h: number) {
   for (let i = 0; i < w * h; i++) if (!outside[i]) m[i] = 1
 }
 
-/** Livello trasparente con i soli pixel cambiati tra la foto inviata e quella generata. */
+/**
+ * Livello trasparente del capo dalla foto generata. Due regole insieme:
+ * - i pixel cambiati rispetto alla foto inviata (il capo, le braccia ridisegnate, l'orlo che scende);
+ * - tutta la parte del corpo del capo (sopra la linea vita/fianchi per il busto, sotto per le gambe):
+ *   così un capo dello stesso colore di quello che avevi nella foto (felpa bianca su canotta bianca)
+ *   non resta bucato. Lì la foto generata è uguale all'originale dove il capo non arriva.
+ * Il fondo resta trasparente solo dove era fondo anche nella foto inviata: i capi chiari non spariscono.
+ */
 export function extractLayer(
   base: HTMLCanvasElement,
   render: ImageBitmap | HTMLCanvasElement,
-  /** colore del fondo inviato: dove il modello ha ridisegnato solo fondo, il livello resta trasparente */
-  background: number[] | null = BG_RGB,
+  opts: {
+    /** zona del capo e linea vita/fianchi in frazione dell'altezza dell'immagine */
+    region?: { category: OnMeCategory; split: number }
+    /** colore del fondo inviato */
+    background?: number[] | null
+  } = {},
 ): HTMLCanvasElement {
+  const background = opts.background === undefined ? BG_RGB : opts.background
   const w = render.width
   const h = render.height
   const layer = makeCanvas(w, h)
@@ -133,14 +145,21 @@ export function extractLayer(
   fillHoles(mask, w, h)
   mask = morph(mask, w, h, 1, false) // via il filo chiaro di sfondo lungo i bordi
 
+  const splitY = opts.region ? Math.round(opts.region.split * h) : -1
+  const tops = opts.region?.category === 'tops'
+  const isBg = (d: Uint8ClampedArray, i: number) => {
+    if (!background) return false
+    const dr = d[i * 4] - background[0]
+    const dg = d[i * 4 + 1] - background[1]
+    const db = d[i * 4 + 2] - background[2]
+    return dr * dr + dg * dg + db * db <= 14 * 14
+  }
   for (let i = 0; i < w * h; i++) {
-    let on = mask[i] === 1
-    if (on && background) {
-      const dr = a[i * 4] - background[0]
-      const dg = a[i * 4 + 1] - background[1]
-      const db = a[i * 4 + 2] - background[2]
-      on = dr * dr + dg * dg + db * db > 14 * 14
-    }
+    const y = (i / w) | 0
+    const inRegion = splitY >= 0 && (tops ? y < splitY : y >= splitY)
+    let on = mask[i] === 1 || inRegion
+    // fondo vero: fondo sia nella foto generata sia in quella inviata
+    if (on && isBg(a, i) && isBg(b, i)) on = false
     a[i * 4 + 3] = on ? 255 : 0
   }
   lctx.putImageData(img, 0, 0)
@@ -164,8 +183,12 @@ export async function makeOnMeLayer(
   category: OnMeCategory,
   /** capo fotografato indossato da qualcuno: il modello ne copia vestibilità e chiusura */
   worn = false,
+  /** linea vita/fianchi in frazione dell'altezza della foto del corpo */
+  split = 0.5,
 ): Promise<{ layer: HTMLCanvasElement; model: string }> {
-  const base = await flattenBody(bodyUrl)
+  const flat = await flattenBody(bodyUrl)
+  const base = flat.canvas
+  const splitFrac = (flat.pad + split * flat.height) / base.height
   const garment = await flatten(garmentUrl, '#ffffff', 768)
   const out = await callTryOn(base.toDataURL('image/jpeg', 0.92), garment, category, worn ? 'model' : 'flat-lay').catch((e: unknown) => {
     // i messaggi della funzione tryon sono già per l'utente (quota finita, servizio occupato…)
@@ -173,7 +196,7 @@ export async function makeOnMeLayer(
   })
   const bmp = await createImageBitmap(out.blob)
   try {
-    return { layer: extractLayer(base, bmp), model: out.model }
+    return { layer: extractLayer(base, bmp, { region: { category, split: splitFrac } }), model: out.model }
   } finally {
     bmp.close()
   }

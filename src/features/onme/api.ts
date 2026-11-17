@@ -4,6 +4,7 @@ import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
 import { useSyncExternalStore } from 'react'
 import { supabase } from '@/lib/supabase'
 import type { Category, Garment } from '@/lib/garments'
+import type { Anchors } from '@/lib/mannequin'
 import { loadBitmap, drawScaled } from '@/lib/image/canvas'
 import { encodeLayer } from '@/lib/image/encode'
 import { makeOnMeLayer, type OnMeCategory } from '@/lib/onMe'
@@ -57,12 +58,23 @@ function friendly(e: unknown): Error {
 }
 
 /** Genera e salva il livello "su di me" di un capo (sostituisce quello vecchio). */
-async function prepareOne(g: Garment, body: { path: string; url: string }, userId: string) {
+type Body = { path: string; url: string; anchors?: Anchors | null }
+
+/** Linea tra busto e gambe sulla foto: poco sopra i fianchi, dove di solito c'è l'elastico. */
+const splitOf = (a?: Anchors | null) => (a ? a.waist.y + (a.hips.y - a.waist.y) * 0.6 : 0.5)
+
+async function prepareOne(g: Garment, body: Body, userId: string) {
   const category = onMeCategory(g.category)
   if (!category) throw new Error('Questo capo non si può vedere su di te.')
   // con la foto indossata il modello copia vestibilità e chiusura; altrimenti usa la foto stesa
   const worn = !!g.fit_photo_path
-  const { layer } = await makeOnMeLayer(body.url, await garmentImageUrl(g.fit_photo_path ?? g.image_path), category, worn)
+  const { layer } = await makeOnMeLayer(
+    body.url,
+    await garmentImageUrl(g.fit_photo_path ?? g.image_path),
+    category,
+    worn,
+    splitOf(body.anchors),
+  )
   const blob = await encodeLayer(layer)
   const path = `${userId}/onme/${g.id}-${Date.now()}.webp`
   const store = supabase.storage.from(BUCKET)
@@ -108,7 +120,7 @@ export const useOnMeQueue = () =>
 /** Aggiunge capi alla coda e la avvia se è ferma. */
 export function prepareOnMe(
   items: Garment[],
-  ctx: { body: { path: string; url: string }; userId: string; qc: QueryClient },
+  ctx: { body: Body; userId: string; qc: QueryClient },
 ) {
   const add = items.map((g) => g.id).filter((id) => id !== queue.current && !queue.pending.includes(id))
   const byId = new Map(items.map((g) => [g.id, g]))
@@ -164,7 +176,8 @@ export function useOnMeStarter() {
   const photo = useBodyPhotoUrl(bodyPath)
   const start =
     bodyPath && photo.data && session
-      ? (items: Garment[]) => prepareOnMe(items, { body: { path: bodyPath, url: photo.data! }, userId: session.user.id, qc })
+      ? (items: Garment[]) =>
+          prepareOnMe(items, { body: { path: bodyPath, url: photo.data!, anchors: profile?.body_anchors }, userId: session.user.id, qc })
       : null
   return { bodyPath, start }
 }
