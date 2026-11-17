@@ -1,7 +1,8 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'framer-motion'
 import { useGesture } from '@use-gesture/react'
 import type { GarmentWithThumb } from '@/features/garments/api'
+import type { Category } from '@/lib/garments'
 import { ON_ME_PAD } from '@/lib/onMe'
 import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
 
@@ -26,16 +27,32 @@ type Props = {
   onStep: (dir: 1 | -1) => void
 }
 
-/** Sul tavolo: dove stanno i capi di ogni zona (frazioni del palco), come un outfit steso. */
-const TABLE: Record<StageZone, { x: number; y: number; w: number; h: number }> = {
-  busto: { x: 0.14, y: 0.0, w: 0.72, h: 0.46 },
-  gambe: { x: 0.24, y: 0.4, w: 0.52, h: 0.46 },
-  piedi: { x: 0.28, y: 0.84, w: 0.44, h: 0.16 },
+/**
+ * Sul tavolo i capi sono in proporzione tra loro, come stesi davvero: ogni foto viene scalata sulla
+ * lunghezza tipica della sua categoria (cm). Una maglia è lunga circa 70 cm, un pantalone 104,
+ * un paio di scarpe largo 30. Il busto copre la vita dei pantaloni, le scarpe ne toccano l'orlo.
+ */
+const LENGTH_CM: Partial<Record<Category, number>> = {
+  canotte: 66,
+  maglie: 70,
+  camicie: 78,
+  felpe_maglioni: 68,
+  giacche_cappotti: 76,
+  pantaloni: 104,
+  jeans: 104,
 }
+const SHOES_CM = 30
+/** quote verticali sul tavolo (cm dall'alto): inizio pantaloni, inizio scarpe, altezza totale */
+const PANTS_Y = 58
+const SHOES_Y = 157
+const TABLE_H = 176
+/** larghezza da far stare nel palco (una felpa con le maniche aperte) */
+const TABLE_W = 110
 const PEEK = 0.16 // quota di schermo occupata dal capo che si intravede ai lati
 const SHADOW = 'drop-shadow(0 3px 6px rgba(11, 31, 68, 0.22))'
 
-type Item = { key: string; g: GarmentWithThumb; zone: StageZone; layer: number; box: Box; z: number; src: string; top?: boolean }
+/** fit "height": la foto è alta quanto il riquadro e centrata (larghezza naturale) */
+type Item = { key: string; g: GarmentWithThumb; zone: StageZone; layer: number; box: Box; z: number; src: string; fit?: 'height' }
 
 /**
  * Il palco del camerino. Swipe orizzontale: capo precedente/successivo della zona attiva.
@@ -74,6 +91,10 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
     return { left: (size.w - w) / 2, top: size.h - h, width: w, height: h }
   }, [size, onMe])
 
+  // tavolo: px per cm, e la composizione centrata in verticale
+  const cm = Math.max(0.01, Math.min(size.h / TABLE_H, size.w / TABLE_W))
+  const y0cm = (size.h - TABLE_H * cm) / 2
+
   /** Riquadro di una zona sul tavolo, o fascia del corpo "su di me". */
   const zoneBox = (z: StageZone): Box => {
     if (onMe) {
@@ -82,8 +103,10 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
       const y1 = z === 'busto' ? a : z === 'gambe' ? b : 1
       return { left: av.left, top: av.top + y0 * av.height, width: av.width, height: (y1 - y0) * av.height }
     }
-    const t = TABLE[z]
-    return { left: t.x * size.w, top: t.y * size.h, width: t.w * size.w, height: t.h * size.h }
+    const cx = size.w / 2
+    if (z === 'busto') return { left: cx - 45 * cm, top: y0cm, width: 90 * cm, height: 72 * cm }
+    if (z === 'gambe') return { left: cx - 28 * cm, top: y0cm + PANTS_Y * cm, width: 56 * cm, height: 104 * cm }
+    return { left: cx - 22 * cm, top: y0cm + SHOES_Y * cm, width: 44 * cm, height: 19 * cm }
   }
 
   const zoneAt = (y: number): StageZone => {
@@ -91,9 +114,14 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
       const f = (y - av.top) / av.height
       return f < onMe.split[0] ? 'busto' : f < onMe.split[1] ? 'gambe' : 'piedi'
     }
-    const f = y / size.h
-    return f < 0.43 ? 'busto' : f < 0.85 ? 'gambe' : 'piedi'
+    const c = (y - y0cm) / cm
+    return c < (PANTS_Y + 72) / 2 ? 'busto' : c < SHOES_Y + 2 ? 'gambe' : 'piedi'
   }
+
+  // cambiando capo, zona o vista il capo attivo riparte sempre dal centro
+  useEffect(() => {
+    dragX.set(0)
+  }, [activeId, activeZone, activeLayer, onMe, dragX])
 
   const prevId = neighbor(state, garments, -1)
   const nextId = neighbor(state, garments, 1)
@@ -104,10 +132,15 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
 
   const bind = useGesture(
     {
-      onDrag: ({ movement: [mx], last, tap, event, velocity: [vx] }) => {
+      onDrag: ({ movement: [mx], last, tap, event, velocity: [vx], canceled }) => {
         if (tap) {
           const r = stage.current!.getBoundingClientRect()
           onSelectZone(zoneAt((event as PointerEvent).clientY - r.top))
+          return
+        }
+        if (canceled || event.type === 'pointercancel') {
+          // il sistema si è preso il gesto (es. scorrimento): il capo torna al suo posto
+          animate(dragX, 0, { type: 'spring', stiffness: 300, damping: 30 })
           return
         }
         dragX.set(mx)
@@ -157,28 +190,34 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
       if (src) items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src })
     })
   } else {
-    if (gambe?.thumbUrl) items.push({ key: 'gambe', g: gambe, zone: 'gambe', layer: 0, box: zoneBox('gambe'), z: 10, src: gambe.thumbUrl, top: true })
-    if (piedi?.thumbUrl) items.push({ key: 'piedi', g: piedi, zone: 'piedi', layer: 0, box: zoneBox('piedi'), z: 15, src: piedi.thumbUrl })
+    const full = (top: number, height: number, shift = 0): Box => ({ left: shift, top, width: size.w, height })
+    if (gambe?.thumbUrl) {
+      const h = (LENGTH_CM[gambe.category] ?? 104) * cm
+      items.push({ key: 'gambe', g: gambe, zone: 'gambe', layer: 0, box: full(y0cm + PANTS_Y * cm, h), z: 10, src: gambe.thumbUrl, fit: 'height' })
+    }
+    if (piedi?.thumbUrl) {
+      const box = { left: size.w / 2 - (SHOES_CM / 2) * cm, top: y0cm + SHOES_Y * cm, width: SHOES_CM * cm, height: 19 * cm }
+      items.push({ key: 'piedi', g: piedi, zone: 'piedi', layer: 0, box, z: 15, src: piedi.thumbUrl })
+    }
     // strati del busto: i più interni spuntano in alto a sinistra, come capi sovrapposti sul tavolo
-    const b = zoneBox('busto')
     busto.forEach(({ g, i }, n) => {
       if (!g.thumbUrl) return
       const depth = busto.length - 1 - n
-      const k = 1 - depth * 0.1
-      const box = {
-        left: b.left + (b.width * (1 - k)) / 2 - depth * b.width * 0.12,
-        top: b.top + (b.height * (1 - k)) / 2 - depth * b.height * 0.05,
-        width: b.width * k,
-        height: b.height * k,
-      }
-      items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src: g.thumbUrl })
+      const h = (LENGTH_CM[g.category] ?? 70) * cm
+      const box = full(y0cm + Math.max(0, 3 - depth * 3) * cm, h, -depth * 7 * cm)
+      items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src: g.thumbUrl, fit: 'height' })
     })
   }
 
   const isActive = (it: Item) => it.zone === activeZone && (activeZone !== 'busto' || it.layer === activeLayer)
 
-  const picture = (src: string, alt: string, top?: boolean): ReactNode => (
-    <img src={src} alt={alt} draggable={false} className={top ? 'h-full w-full object-contain object-top' : 'h-full w-full object-contain'} />
+  const picture = (src: string, alt: string, fit?: 'height'): ReactNode => (
+    <img
+      src={src}
+      alt={alt}
+      draggable={false}
+      className={fit === 'height' ? 'mx-auto block h-full w-auto max-w-none' : 'h-full w-full object-contain'}
+    />
   )
 
   const peek = (id: string | null, side: 'left' | 'right') => {
@@ -235,7 +274,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
             if (!isActive(it)) {
               return (
                 <div key={it.key} className="pointer-events-none absolute" style={style}>
-                  {picture(it.src, it.g.name, it.top)}
+                  {picture(it.src, it.g.name, it.fit)}
                 </div>
               )
             }
@@ -252,7 +291,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
                     transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                     className="h-full w-full"
                   >
-                    {picture(it.src, it.g.name, it.top)}
+                    {picture(it.src, it.g.name, it.fit)}
                   </motion.div>
                 </AnimatePresence>
               </motion.div>

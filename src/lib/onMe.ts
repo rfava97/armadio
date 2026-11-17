@@ -131,6 +131,7 @@ export function extractLayer(
   const r = Math.max(2, Math.round(Math.max(w, h) * 0.005))
   mask = morph(morph(mask, w, h, r, true), w, h, r, false) // chiude le crepe
   fillHoles(mask, w, h)
+  mask = morph(mask, w, h, 1, false) // via il filo chiaro di sfondo lungo i bordi
 
   for (let i = 0; i < w * h; i++) {
     let on = mask[i] === 1
