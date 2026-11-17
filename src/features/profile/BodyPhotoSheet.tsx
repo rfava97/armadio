@@ -11,6 +11,7 @@ import { bgModelReady, removeBackground } from '@/lib/image/removeBackground'
 import { encodeBodyPhoto } from '@/lib/image/encode'
 import { guessBodyAnchors } from '@/lib/image/bodyAnchors'
 import { useCanvasUrl } from '@/lib/image/useCanvasUrl'
+import { keepMainParts } from '@/lib/image/components'
 import { anchorsForCroppedFigure, buildMannequin, type Anchors, type Measures } from '@/lib/mannequin'
 import { AnchorEditor } from './AnchorEditor'
 import { useSaveProfile, useUploadBodyPhoto, type Profile } from './api'
@@ -72,7 +73,7 @@ function NewPhoto({ profile, onDone }: { profile: Profile; onDone: () => void })
       const cut = await removeBackground(photo, (p) =>
         setState((s) => (s.phase === 'removing' ? { ...s, progress: p } : s)),
       )
-      const fig = cropToSubject(cut, PAD)
+      const fig = cropToSubject(keepMainParts(cut, 0.2), PAD)
       const base = baseAnchors(profile, fig.width, fig.height)
       setState({ phase: 'calibrate', canvas: fig, anchors: guessBodyAnchors(fig, base), cutFailed: false })
     } catch (e) {

@@ -15,6 +15,7 @@ import { classifyGarment, clipModelReady, composeName } from '@/lib/image/classi
 import { encodeGarment } from '@/lib/image/encode'
 import { cn } from '@/lib/utils'
 import { useCanvasUrl } from '@/lib/image/useCanvasUrl'
+import { keepMainParts } from '@/lib/image/components'
 import { useCreateGarment } from './api'
 import { GarmentForm, type RecognizeStatus } from './GarmentForm'
 import { CropBox } from './CropBox'
@@ -125,9 +126,9 @@ export function AddGarmentSheet({ open, onClose }: { open: boolean; onClose: () 
     async (original: HTMLCanvasElement, run: number) => {
       setItem((it) => ({ ...it, phase: 'removing', progress: null, firstDownload: !bgModelReady(), error: null }))
       try {
-        const cut = cropToSubject(
-          await removeBackground(original, (p) => run === runId.current && setItem((it) => ({ ...it, progress: p }))),
-        )
+        const removed = await removeBackground(original, (p) => run === runId.current && setItem((it) => ({ ...it, progress: p })))
+        // via i puntini staccati lasciati dalla scontornatura (le due scarpe restano entrambe)
+        const cut = cropToSubject(keepMainParts(removed, 0.1))
         if (run !== runId.current) return
         setItem((it) => ({ ...it, phase: 'review', cutout: cut, useOriginal: false }))
         setView('dopo')

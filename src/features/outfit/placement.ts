@@ -1,69 +1,69 @@
 import type { Garment } from '@/lib/garments'
 import type { Anchors } from '@/lib/mannequin'
+import type { Dressed } from '@/lib/image/dress'
 import type { StageZone } from './state'
 
 export type Box = { left: number; top: number; width: number; height: number }
 
 /**
- * Larghezza del capo rispetto alla distanza tra le spalle. Le foto dei capi sono stese, con le
- * maniche aperte: una maglia è ~1.75 volte le spalle, una canotta (senza maniche) poco più.
+ * Quanto il busto del capo (senza maniche) è più largo delle spalle: una t-shirt aderisce,
+ * felpe e giacche stanno sopra altri strati e sono più ampie.
  */
-const BUST_WIDTH: Record<string, number> = {
-  canotte: 1.2,
-  maglie: 1.75,
-  camicie: 1.75,
-  felpe_maglioni: 1.8,
-  giacche_cappotti: 1.85,
+const EASE: Record<string, number> = {
+  canotte: 0.95,
+  maglie: 1.06,
+  camicie: 1.08,
+  felpe_maglioni: 1.16,
+  giacche_cappotti: 1.24,
 }
 
+type Fit = Pick<Garment, 'category' | 'fit_scale' | 'fit_offset_x' | 'fit_offset_y'>
+
 /**
- * Riquadro (in px, rispetto all'avatar) di un capo, dato l'avatar w×h e i suoi ancoraggi (SPEC 2.3):
- * busto collo → spalle, gambe vita → caviglie, scarpe ai piedi. Poi la vestibilità del capo.
+ * Riquadro (px, rispetto all'avatar w×h) di un capo già "vestito" (SPEC 2.3):
+ * - busto: le spalle del capo sulle spalle dell'avatar, busto largo come le spalle × agio;
+ * - gambe: vita del capo larga come i fianchi, dalla vita alle caviglie;
+ * - scarpe: ai piedi.
+ * Poi la vestibilità salvata sul capo (scala e spostamento).
  */
-export function placeGarment(
-  g: Pick<Garment, 'category' | 'fit_scale' | 'fit_offset_x' | 'fit_offset_y'>,
-  zone: StageZone,
-  aspect: number,
-  a: Anchors,
-  w: number,
-  h: number,
-): Box {
+export function placeGarment(g: Fit, zone: StageZone, dressed: Dressed, a: Anchors, hipWidth: number, w: number, h: number): Box {
   const px = (p: { x: number; y: number }) => ({ x: p.x * w, y: p.y * h })
-  const neck = px(a.neck)
   const sl = px(a.shoulder_l)
   const sr = px(a.shoulder_r)
   const waist = px(a.waist)
   const al = px(a.ankle_l)
   const ar = px(a.ankle_r)
   const fit = Number(g.fit_scale) || 1
+  const shoulders = Math.hypot(sr.x - sl.x, sr.y - sl.y)
 
-  let width: number
-  let height: number
-  let cx: number
-  let top: number
-
-  if (zone === 'busto') {
-    const shoulders = Math.hypot(sr.x - sl.x, sr.y - sl.y)
-    width = shoulders * (BUST_WIDTH[g.category] ?? 1.75) * fit
-    height = width / aspect
-    cx = (sl.x + sr.x) / 2
-    // il colletto sta appena sopra la base del collo
-    top = neck.y - height * 0.05
-  } else if (zone === 'gambe') {
+  let box: Box
+  if (zone === 'busto' && dressed.shoulderL && dressed.shoulderR) {
+    const gl = dressed.shoulderL
+    const gr = dressed.shoulderR
+    const s = (shoulders * (EASE[g.category] ?? 1.08) * fit) / Math.max(1, gr.x - gl.x)
+    const gx = (gl.x + gr.x) / 2
+    const gy = (gl.y + gr.y) / 2
+    const ax = (sl.x + sr.x) / 2
+    const ay = (sl.y + sr.y) / 2 - shoulders * 0.03 // la cucitura sta appena sopra il punto della spalla
+    box = { left: ax - gx * s, top: ay - gy * s, width: dressed.w * s, height: dressed.h * s }
+  } else if (zone === 'gambe' && dressed.waist) {
+    const hips = (hipWidth > 0 ? hipWidth * w : shoulders * 0.95) * 1.06 * fit
+    const sx = hips / dressed.waist.width
     const ankleY = (al.y + ar.y) / 2
-    height = (ankleY - waist.y) * 1.06 * fit
-    width = height * aspect
-    cx = waist.x
-    top = waist.y - height * 0.02
+    let sy = ((ankleY - waist.y) * 1.04 * fit) / dressed.h
+    // un po' di adattamento in altezza è credibile, troppo deforma il capo
+    sy = Math.min(sx * 1.3, Math.max(sx * 0.77, sy))
+    box = { left: waist.x - dressed.waist.cx * sx, top: waist.y - dressed.h * sy * 0.01, width: dressed.w * sx, height: dressed.h * sy }
   } else {
     const spread = Math.max(Math.abs(ar.x - al.x), w * 0.08)
-    width = spread * 2.4 * fit
-    height = width / aspect
-    cx = (al.x + ar.x) / 2
-    top = (al.y + ar.y) / 2 - height * 0.3
+    const width = spread * 2.3 * fit
+    const height = (width / dressed.w) * dressed.h
+    box = { left: (al.x + ar.x) / 2 - width / 2, top: (al.y + ar.y) / 2 - height * 0.3, width, height }
   }
 
-  const ox = (Number(g.fit_offset_x) || 0) * width
-  const oy = (Number(g.fit_offset_y) || 0) * height
-  return { left: cx - width / 2 + ox, top: top + oy, width, height }
+  return {
+    ...box,
+    left: box.left + (Number(g.fit_offset_x) || 0) * box.width,
+    top: box.top + (Number(g.fit_offset_y) || 0) * box.height,
+  }
 }

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { useGarments, useUpdateFit, type Fit, type GarmentWithThumb } from '@/features/garments/api'
 import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
 import { Stage, type AvatarSource } from '@/features/outfit/Stage'
+import { usePreparedBody } from '@/features/outfit/useBodyPhoto'
 import { PickerSheet } from '@/features/outfit/PickerSheet'
 import {
   addLayer,
@@ -36,7 +37,7 @@ export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
   const { data: profile } = useProfile()
   const photo = useBodyPhotoUrl(profile?.avatar_mode === 'foto' ? profile.body_photo_path : null)
-  const [photoAspect, setPhotoAspect] = useState<number | null>(null)
+  const body = usePreparedBody(photo.data, profile?.avatar_mode === 'foto' ? profile.body_anchors : null)
   const [state, setState] = useState<CamerinoState | null>(null)
   const [picking, setPicking] = useState(false)
   const [adjust, setAdjust] = useState<Fit | null>(null)
@@ -72,11 +73,12 @@ export default function Outfit() {
 
   const avatar: AvatarSource | null = useMemo(() => {
     if (!profile) return null
-    if (profile.avatar_mode === 'foto' && photo.data && profile.body_anchors && photoAspect) {
-      return { kind: 'photo', url: photo.data, anchors: profile.body_anchors, aspect: photoAspect }
+    if (profile.avatar_mode === 'foto' && body && profile.body_anchors) {
+      return { kind: 'photo', url: body.url, anchors: profile.body_anchors, aspect: body.aspect, hipWidth: body.hipWidth }
     }
-    return { kind: 'mannequin', measures: profile, anchors: buildMannequin(profile).anchors, aspect: VIEW.w / VIEW.h }
-  }, [profile, photo.data, photoAspect])
+    const shape = buildMannequin(profile)
+    return { kind: 'mannequin', measures: profile, anchors: shape.anchors, aspect: VIEW.w / VIEW.h, hipWidth: shape.hipWidth }
+  }, [profile, body])
 
   const byId = useMemo(() => new Map((garments ?? []).map((g) => [g.id, g])), [garments])
   const activeGarment: GarmentWithThumb | undefined = state ? byId.get(getActiveId(state) ?? '') : undefined
@@ -226,15 +228,6 @@ export default function Outfit() {
 
           {/* il palco */}
           <div className="relative mt-2 min-h-0 flex-1">
-            {/* serve solo a leggere le proporzioni della foto del corpo */}
-            {profile?.avatar_mode === 'foto' && photo.data && photoAspect === null && (
-              <img
-                src={photo.data}
-                alt=""
-                hidden
-                onLoad={(e) => setPhotoAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight)}
-              />
-            )}
             <Stage
               garments={garments}
               state={state}

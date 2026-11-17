@@ -76,6 +76,8 @@ export type MannequinShape = {
   anchors: Anchors
   /** riquadro che contiene la figura, in coordinate 0..1 di VIEW (per adattare gli ancoraggi a una foto ritagliata) */
   bounds: { x: number; y: number; w: number; h: number }
+  /** larghezza del corpo ai fianchi, in frazione della larghezza di VIEW */
+  hipWidth: number
 }
 
 type P = [number, number]
@@ -236,6 +238,7 @@ export function buildMannequin(input: Measures): MannequinShape {
     floor: { cx: 0, cy: GROUND, rx: Math.max(hipHalf, ankleX + 6) * 1.5, ry: 2.2 },
     anchors,
     bounds,
+    hipWidth: (2 * hipHalf) / VIEW.w,
   }
 }
 

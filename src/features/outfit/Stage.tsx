@@ -4,13 +4,15 @@ import { useGesture } from '@use-gesture/react'
 import { Mannequin } from '@/components/Mannequin'
 import type { Anchors, Measures } from '@/lib/mannequin'
 import type { GarmentWithThumb, Fit } from '@/features/garments/api'
+import { dressGarment, type Dressed } from '@/lib/image/dress'
 import { placeGarment, type Box } from './placement'
 import { getActiveId, MAX_LAYERS, neighbor, type CamerinoState, type StageZone } from './state'
 import { cn } from '@/lib/utils'
 
+/** hipWidth: larghezza del corpo ai fianchi in frazione della larghezza dell'avatar */
 export type AvatarSource =
-  | { kind: 'mannequin'; measures: Measures; anchors: Anchors; aspect: number }
-  | { kind: 'photo'; url: string; anchors: Anchors; aspect: number }
+  | { kind: 'mannequin'; measures: Measures; anchors: Anchors; aspect: number; hipWidth: number }
+  | { kind: 'photo'; url: string; anchors: Anchors; aspect: number; hipWidth: number }
 
 type Props = {
   garments: GarmentWithThumb[]
@@ -27,6 +29,8 @@ type Props = {
 const LONG_PRESS_MS = 500
 const MOVE_TOLERANCE = 10
 const PEEK = 0.17 // quota di schermo dove arriva il capo che si intravede ai lati
+// ombra morbida sotto i capi: danno profondità e separano gli strati
+const SHADOW = 'drop-shadow(0 2px 3px rgba(11, 31, 68, 0.28))'
 
 /** Zona dell'avatar sotto il dito (y in 0..1 dell'avatar). */
 function zoneAt(y: number, a: Anchors): StageZone {
@@ -35,10 +39,36 @@ function zoneAt(y: number, a: Anchors): StageZone {
   return 'piedi'
 }
 
+/**
+ * Ritaglio di testa e collo (clip-path in % dell'avatar): tutto sopra il mento, più il collo
+ * fino alla sua base con una curva a U, come lo scollo di una maglia.
+ */
+function headClip(a: Anchors, w: number, h: number): string {
+  const sd = Math.hypot((a.shoulder_r.x - a.shoulder_l.x) * w, (a.shoulder_r.y - a.shoulder_l.y) * h)
+  const nx = a.neck.x * w
+  const ny = a.neck.y * h
+  const half = sd * 0.15 // mezza larghezza del collo
+  const chin = ny - sd * 0.3
+  const pts: [number, number][] = [
+    [0, 0],
+    [w, 0],
+    [w, chin],
+    [nx + half, chin],
+    [nx + half, ny - sd * 0.02],
+    [nx + half * 0.55, ny + sd * 0.025],
+    [nx, ny + sd * 0.035],
+    [nx - half * 0.55, ny + sd * 0.025],
+    [nx - half, ny - sd * 0.02],
+    [nx - half, chin],
+    [0, chin],
+  ]
+  return `polygon(${pts.map(([x, y]) => `${((x / w) * 100).toFixed(2)}% ${((y / h) * 100).toFixed(2)}%`).join(', ')})`
+}
+
 export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone, onStep, onAddLayer }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
-  const [aspects, setAspects] = useState<Record<string, number>>({})
+  const [dressed, setDressed] = useState<Record<string, Dressed>>({})
   const [ring, setRing] = useState<{ x: number; y: number } | null>(null)
   const dragX = useMotionValue(0)
   const [dir, setDir] = useState<1 | -1>(1)
@@ -69,9 +99,9 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
   const { zone: activeZone, layer: activeLayer } = state.active
 
   const boxFor = (g: GarmentWithThumb, zone: StageZone, fit?: Fit | null): Box | null => {
-    const aspect = aspects[g.id]
-    if (!aspect || av.w === 0) return null
-    const b = placeGarment(fit ? { ...g, ...fit } : g, zone, aspect, avatar.anchors, av.w, av.h)
+    const dg = dressed[g.id]
+    if (!dg || av.w === 0) return null
+    const b = placeGarment(fit ? { ...g, ...fit } : g, zone, dg, avatar.anchors, avatar.hipWidth, av.w, av.h)
     return { ...b, left: b.left + av.left, top: b.top + av.top }
   }
 
@@ -85,6 +115,23 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
     const g = id ? byId.get(id) : undefined
     if (g) worn.push({ g, zone: 'busto', z: 30 + g.layer_rank * MAX_LAYERS + i, layer: i })
   })
+
+  // capi da preparare: indossati e quelli che si intravedono ai lati
+  const needed = [...worn.map((w) => w.g), ...[neighbor(state, garments, -1), neighbor(state, garments, 1)].map((id) => (id ? byId.get(id) : undefined))]
+    .filter((g): g is GarmentWithThumb => !!g && !!g.thumbUrl && !dressed[g.id])
+  const neededKey = needed.map((g) => g.id).join(',')
+  useEffect(() => {
+    let cancelled = false
+    for (const g of needed) {
+      dressGarment(g.image_path, g.thumbUrl!, g.category)
+        .then((dg) => !cancelled && setDressed((m) => ({ ...m, [g.id]: dg })))
+        .catch((e) => console.warn('Capo non preparato', g.name, e))
+    }
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- dipende solo dall'elenco dei capi mancanti
+  }, [neededKey])
 
   const isActive = (w: { zone: StageZone; layer: number }) =>
     w.zone === activeZone && (activeZone !== 'busto' || w.layer === activeLayer)
@@ -213,7 +260,7 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
         className="absolute z-[60] opacity-45 transition-opacity active:opacity-70"
         style={{ left, top: b.top, width: b.width, height: b.height }}
       >
-        <img src={g.thumbUrl ?? ''} alt="" className="h-full w-full object-contain" draggable={false} />
+        <img src={dressed[g.id].url} alt="" className="h-full w-full" draggable={false} />
       </button>
     )
   }
@@ -258,39 +305,24 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
         )}
       </div>
 
-      {/* per conoscere le proporzioni dei capi prima di posizionarli */}
-      <div hidden>
-        {[...worn.map((w) => w.g), ...[prevId, nextId].map((id) => (id ? byId.get(id) : undefined))]
-          .filter((g): g is GarmentWithThumb => !!g && !aspects[g.id] && !!g.thumbUrl)
-          .map((g) => (
-            <img
-              key={g.id}
-              src={g.thumbUrl!}
-              alt=""
-              onLoad={(e) => {
-                const im = e.currentTarget
-                setAspects((a) => ({ ...a, [g.id]: im.naturalWidth / im.naturalHeight }))
-              }}
-            />
-          ))}
-      </div>
-
       {worn.map((w) => {
         const active = isActive(w)
         const b = boxFor(w.g, w.zone, active ? adjust : null)
         if (!b) return null
-        const img = (
-          <img src={w.g.thumbUrl ?? ''} alt={w.g.name} className="h-full w-full object-contain" draggable={false} />
-        )
+        const img = <img src={dressed[w.g.id].url} alt={w.g.name} className="h-full w-full" draggable={false} />
         if (!active) {
           return (
-            <div key={w.g.id + w.zone + w.layer} className="pointer-events-none absolute" style={{ ...b, zIndex: w.z }}>
+            <div key={w.g.id + w.zone + w.layer} className="pointer-events-none absolute" style={{ ...b, zIndex: w.z, filter: SHADOW }}>
               {img}
             </div>
           )
         }
         return (
-          <motion.div key={`active-${w.zone}-${w.layer}`} className="pointer-events-none absolute" style={{ ...b, zIndex: w.z, x: dragX }}>
+          <motion.div
+            key={`active-${w.zone}-${w.layer}`}
+            className="pointer-events-none absolute"
+            style={{ ...b, zIndex: w.z, x: dragX, filter: SHADOW }}
+          >
             <AnimatePresence custom={dir} initial={false} mode="popLayout">
               <motion.div
                 key={w.g.id}
@@ -308,6 +340,17 @@ export function Stage({ garments, state, avatar, adjust, onAdjust, onSelectZone,
           </motion.div>
         )
       })}
+
+      {/* testa e collo sopra i capi del busto: il collo esce dal colletto */}
+      {av.w > 0 && worn.some((w) => w.zone === 'busto') && (
+        <div className="pointer-events-none absolute z-[55]" style={{ left: av.left, top: av.top, width: av.w, height: av.h, clipPath: headClip(avatar.anchors, av.w, av.h) }}>
+          {avatar.kind === 'mannequin' ? (
+            <Mannequin measures={avatar.measures} className="h-full w-full" />
+          ) : (
+            <img src={avatar.url} alt="" className="h-full w-full" draggable={false} />
+          )}
+        </div>
+      )}
 
       {peek(prevId, 'left')}
       {peek(nextId, 'right')}
