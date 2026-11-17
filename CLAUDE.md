@@ -15,7 +15,7 @@ Nessun servizio a pagamento, nessuna carta di credito collegata a nessun account
 - AI di riconoscimento capi e scontornatura: SOLO nel browser (modelli locali), niente API.
 - Meteo: Open-Meteo (gratis, senza chiave).
 - LLM per la chat stilista: opzionale, solo Gemini API free tier, e solo con dati testuali (mai foto del corpo).
-- "Prova con Gemini" (sperimentale, decisa dall'utente): l'app NON chiama Gemini. Prepara le foto e un prompt che l'utente condivide a mano con l'app Gemini gratuita, poi importa il risultato. L'interfaccia avvisa che le foto vanno a Google.
+- Collegamento "Apri Gemini" (deciso dall'utente): l'app NON chiama Gemini e non gli manda foto. Copia solo un prompt testuale dell'outfit e apre l'app Gemini; le foto, se vuole, le allega l'utente. L'interfaccia avvisa che le foto vanno a Google.
 - Virtual try-on a pagamento: VIETATO in questa fase. Ammesso solo quello gratuito su Hugging Face (Edge Function `tryon`), con avviso privacy nell'interfaccia.
 
 ## Stack (non cambiarlo senza chiedere)

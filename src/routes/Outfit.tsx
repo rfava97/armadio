@@ -308,7 +308,6 @@ export default function Outfit() {
               .filter((g): g is GarmentWithThumb => !!g)
               .sort((a, b) => a.layer_rank - b.layer_rank)}
             shoes={state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined}
-            anchors={profile?.body_anchors ?? null}
             state={state}
           />
           <PickerSheet
