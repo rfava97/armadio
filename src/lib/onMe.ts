@@ -296,19 +296,16 @@ function layerExtent(url: string): Promise<Extent> {
       const d = ctx.getImageData(0, 0, W, H).data
       ctx.clearRect(0, 0, W, H)
       ctx.fillStyle = '#000'
-      const m = Math.round(W * 0.01)
       let top = -1
       const rowL = new Int16Array(H).fill(-1)
       const rowR = new Int16Array(H).fill(-1)
-      // la regola per righe ignora i pezzi stretti (ganci, lacci, punte): non devono restringere
-      // quello che si vede sotto, es. l'orlo della maglia sotto i ganci di una giacca
+      // per riga, i pezzi del capo (ignorando quelli stretti: ganci, lacci, punte)
       const thin = Math.max(2, Math.round(W * 0.03))
+      const runs: [number, number][][] = []
       for (let y = 0; y < H; y++) {
-        // l, r: tutto il capo (serve al cappuccio); wl, wr: senza i pezzi stretti (serve al ritaglio)
         let l = -1
         let r = -1
-        let wl = -1
-        let wr = -1
+        const list: [number, number][] = []
         let run = 0
         for (let x = 0; x <= W; x++) {
           if (x < W && d[(y * W + x) * 4 + 3] > 100) {
@@ -316,18 +313,37 @@ function layerExtent(url: string): Promise<Extent> {
             if (l < 0) l = x
             r = x
           } else {
-            if (run >= thin) {
-              if (wl < 0) wl = x - run
-              wr = x - 1
-            }
+            if (run >= thin) list.push([x - run, x - 1])
             run = 0
           }
         }
         rowL[y] = l
         rowR[y] = r
         if (l >= 0 && top < 0) top = y
-        if (wl < 0) ctx.fillRect(0, y, W, 1)
-        else ctx.fillRect(wl - m, y, wr - wl + 1 + 2 * m, 1)
+        runs.push(list)
+      }
+      // centro del corpo: la mediana dei centri delle righe
+      const mids = runs.filter((l) => l.length).map((l) => (l[0][0] + l[l.length - 1][1]) / 2).sort((p, q) => p - q)
+      const cx = mids.length ? mids[mids.length >> 1] : W / 2
+      // Dove si vede lo strato sotto, riga per riga:
+      // - righe senza il capo (o solo pezzi stretti): tutta la riga (l'orlo che esce sotto);
+      // - sotto il capo (rientrando di 2 px: sul bordo non deve trasparire);
+      // - nel vuoto che contiene il centro del corpo: l'apertura di una giacca aperta, lo scollo,
+      //   tra le maniche sotto l'orlo. Non nei vuoti di lato (ascelle) né oltre le maniche.
+      const e = 2
+      for (let y = 0; y < H; y++) {
+        const list = runs[y]
+        if (!list.length) {
+          ctx.fillRect(0, y, W, 1)
+          continue
+        }
+        for (const [a0, a1] of list) if (a1 - a0 > 2 * e) ctx.fillRect(a0 + e, y, a1 - a0 + 1 - 2 * e, 1)
+        if (list.some(([a0, a1]) => a0 <= cx && cx <= a1)) continue
+        const left = list.filter(([, a1]) => a1 < cx).pop()
+        const right = list.find(([a0]) => a0 > cx)
+        const g0 = left ? left[1] + 1 - e : 0
+        const g1 = right ? right[0] - 1 + e : W - 1
+        ctx.fillRect(g0, y, g1 - g0 + 1, 1)
       }
       // e per colonne: dove c'è il capo, sotto non si vede niente sopra il suo bordo più alto (le
       // spalle oblique di una giacca lasciano dei vuoti nelle righe, ma non nelle colonne)
@@ -361,8 +377,8 @@ function layerExtent(url: string): Promise<Extent> {
       const cctx = ctx2d(cols)
       cctx.fillStyle = '#000'
       for (let x = 0; x < W; x++) {
-        // un pixel sotto il bordo: lo strato sotto non fa da contorno al capo sopra
-        const t = smooth[x] < 0 ? 0 : Math.min(H, smooth[x] + 1)
+        // qualche pixel sotto il bordo: lo strato sotto non fa da contorno al capo sopra
+        const t = smooth[x] < 0 ? 0 : Math.min(H, smooth[x] + 3)
         cctx.fillRect(x, t, 1, H - t)
       }
       ctx.globalCompositeOperation = 'destination-in'

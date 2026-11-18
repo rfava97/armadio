@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'framer-motion'
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion, useTransform } from 'framer-motion'
 import { useGesture } from '@use-gesture/react'
 import type { GarmentWithThumb } from '@/features/garments/api'
 import type { Category } from '@/lib/garments'
@@ -93,6 +93,9 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const dragX = useMotionValue(0)
+  // su di te il capo non segue il dito (la maschera dei capi sopra resterebbe ferma e lo taglierebbe):
+  // sbiadisce mentre trascini e cambia in dissolvenza
+  const dragFade = useTransform(dragX, (v) => Math.max(0.35, 1 - Math.abs(v) / 260))
   const [dir, setDir] = useState<1 | -1>(1)
   const reduce = useReducedMotion()
 
@@ -386,7 +389,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
               )
             }
             return (
-              <motion.div key={it.key} className="pointer-events-none absolute" style={{ ...style, x: dragX }}>
+              <motion.div key={it.key} className="pointer-events-none absolute" style={onMe ? { ...style, opacity: dragFade } : { ...style, x: dragX }}>
                 <AnimatePresence custom={dir} initial={false} mode="popLayout">
                   <motion.div
                     key={it.g.id}
