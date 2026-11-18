@@ -47,41 +47,38 @@ export async function makeSilhouette(bodyUrl: string): Promise<Frame> {
 }
 
 const HOW: Record<string, string> = {
-  aperta:
-    'open (fully unzipped / unbuttoned), the two front panels hanging loose; between the open panels the mannequin MUST stay flat green (no shirt, no skin, no lining in the gap)',
-  aperto:
-    'open (fully unzipped / unbuttoned), the two front panels hanging loose; between the open panels the mannequin MUST stay flat green (no shirt, no skin, no lining in the gap)',
+  aperta: 'open (fully unzipped / unbuttoned), the two front panels hanging loose, the mannequin green between them',
+  aperto: 'open (fully unzipped / unbuttoned), the two front panels hanging loose, the mannequin green between them',
   chiusa: 'closed (fully zipped / buttoned)',
   chiuso: 'closed (fully zipped / buttoned)',
   oversize: 'oversized, loose and boxy, dropped shoulders',
   aderente: 'slim, close-fitting',
 }
 
-/** Dove finisce il capo, per categoria: la taglia giusta, non più lungo né più largo. */
-const LENGTH: Record<string, string> = {
-  canotte: 'hem at the belt line',
-  maglie: 'hem at the belt line, just covering the waistband',
-  camicie: 'hem just below the belt line',
-  felpe_maglioni: 'hem at the belt line, just covering the waistband; ribbed cuffs exactly at the wrist bone',
-  giacche_cappotti: 'length as the real garment in image 2 (a short jacket ends at the belt line)',
-  pantaloni: 'waistband at the waist, hem at the ankle',
-  jeans: 'waistband at the waist, hem at the ankle',
+/** Dove finisce il capo sul manichino, per categoria. */
+const ENDS: Record<string, string> = {
+  pantaloni: 'the waistband at the mannequin waist and the hem at its ankles',
+  jeans: 'the waistband at the mannequin waist and the hem at its ankles',
+  giacche_cappotti: 'its real length, the cuffs at the mannequin wrists',
 }
 
-/** Prompt per disegnare solo il capo sulla sagoma. */
+/**
+ * Prompt per vestire la sagoma verde con il capo. È quello che ha funzionato meglio: parla solo del
+ * manichino (parole come "corpo" o "mani" fanno comparire una persona) e chiede di lasciarlo verde
+ * dove il capo non copre, anche sotto una zip aperta.
+ */
 export function geminiShapePrompt(kind: string, howIt: string, category?: string): string {
   const name = howIt.trim().toLowerCase()
   const how = HOW[name] ?? (howIt.trim() || 'as it is normally worn')
   const oversize = /oversize|larg/.test(name)
+  const ends = ENDS[category ?? ''] ?? 'the hem at the mannequin waist and the cuffs at its wrists'
   return [
     'Image 1 is a flat green mannequin silhouette seen from the front, on a white background. Image 2 is a garment.',
     `Dress the green mannequin with ONLY this ${kind}, worn like this: ${how}.`,
-    'Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with natural folds and drape.',
-    oversize
-      ? 'Size: oversized as described, but keep the real proportions of the garment in image 2.'
-      : `Size: TRUE TO SIZE for this body, a regular fit, not oversized and not longer than needed. Shoulder seams exactly on the shoulder points, sleeves ending at the wrist bone with the hands fully visible, ${LENGTH[category ?? ''] ?? 'real length of the garment'}. Keep the real proportions of the garment in image 2.`,
-    'The collar sits around the neck, below the chin.',
-    'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, under an opened zip or unbuttoned front, hands, legs) keep the mannequin exactly the same flat green as in image 1: it must be green under the opened zip. Do not draw a person, skin, face, hands, an undershirt or shadows on the mannequin.',
+    `Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with natural folds and drape. ${
+      oversize ? 'Oversized as described.' : 'Regular fit, not oversized, not longer than needed:'
+    } ${ends}. The collar sits around the neck, below the chin.`,
+    'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, open front, hands, legs) keep the mannequin exactly the same flat green as in image 1. It must be green under an opened zip. Do not draw a person, skin, face, hands or shadows on the mannequin.',
     'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. The inside of the garment (lining, back of the collar) may be visible where it naturally would.',
     'Do not move, resize or crop the mannequin: same canvas size, framing and position as image 1. Plain white background, no shadows.',
     'Output: one single image.',
