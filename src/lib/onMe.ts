@@ -214,6 +214,8 @@ export async function composeOnMe(
   topsFrom = layerUrls.length,
   /** riga delle spalle sulla foto (frazione), per i cappucci degli strati sotto */
   shoulderY?: number,
+  /** per ogni strato del busto (dal più interno): tenuto dentro i capi sopra */
+  inside: boolean[] = [],
 ): Promise<Blob> {
   const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
   const body = await load(bodyUrl)
@@ -230,7 +232,7 @@ export async function composeOnMe(
   for (const [n, u] of layerUrls.entries()) {
     const l = await load(u)
     const k = n - topsFrom
-    const cover = k >= 0 ? await coverMask(tops.slice(k + 1)) : null
+    const cover = k >= 0 ? await coverMask(tops.slice(k + 1), !!inside[k]) : null
     if (cover) {
       // lo strato coperto, ritagliato dove esce dai capi sopra
       const t = makeCanvas(l.width, l.height)
@@ -276,7 +278,7 @@ export async function composeOnMe(
  * Maschera alfa (opaca = visibile), stesso fotogramma dei livelli.
  */
 /** maschera per righe, riga più alta (frazione), e per ogni riga il primo e l'ultimo pixel del capo (-1 se vuota) */
-type Extent = { mask: HTMLCanvasElement; top: number; rowL: Int16Array; rowR: Int16Array }
+type Extent = { mask: HTMLCanvasElement; top: number; rowL: Int16Array; rowR: Int16Array; colBottom: Float32Array }
 const extents = new Map<string, Promise<Extent>>()
 
 /** Maschera per righe del capo e riga più alta (frazione), in cache per URL. */
@@ -330,7 +332,15 @@ function layerExtent(url: string): Promise<Extent> {
       // e per colonne: dove c'è il capo, sotto non si vede niente sopra il suo bordo più alto (le
       // spalle oblique di una giacca lasciano dei vuoti nelle righe, ma non nelle colonne)
       const colTop = new Float32Array(W).fill(-1)
+      // orlo per colonne (più basso pixel pieno): per gli strati tenuti "dentro"
+      const colBottom = new Float32Array(W).fill(-1)
       for (let x = 0; x < W; x++) {
+        for (let y = H - 1; y >= 0; y--) {
+          if (d[(y * W + x) * 4 + 3] > 100) {
+            colBottom[x] = y
+            break
+          }
+        }
         for (let y = 0; y < H; y++) {
           // anche il bordo sfumato del capo conta: sotto non deve trasparire
           if (d[(y * W + x) * 4 + 3] > 20) {
@@ -359,7 +369,7 @@ function layerExtent(url: string): Promise<Extent> {
       ctx.drawImage(cols, 0, 0)
       ctx.globalCompositeOperation = 'source-over'
       releaseCanvas(cols)
-      return { mask: c, top: top < 0 ? 1 : top / H, rowL, rowR }
+      return { mask: c, top: top < 0 ? 1 : top / H, rowL, rowR, colBottom }
     })()
     extents.set(url, p)
     // gli URL firmati cambiano: non tengo in memoria quelli vecchi all'infinito
@@ -511,15 +521,44 @@ export async function hoodMask(url: string, shoulder: number): Promise<HTMLCanva
   return c
 }
 
-/** Dove si vede uno strato che ha sopra questi livelli (null se sopra non c'è niente). */
-export async function coverMask(above: string[]): Promise<HTMLCanvasElement | null> {
+/**
+ * Dove si vede uno strato che ha sopra questi livelli (null se sopra non c'è niente).
+ * inside: lo strato è tenuto dentro i capi sopra e non esce sotto il loro orlo (per colonne, l'orlo
+ * più basso tra i capi sopra; ganci e lacci stretti non contano).
+ */
+export async function coverMask(above: string[], inside = false): Promise<HTMLCanvasElement | null> {
   if (!above.length) return null
-  const masks = (await Promise.all(above.map(layerExtent))).map((e) => e.mask)
+  const extents = await Promise.all(above.map(layerExtent))
+  const masks = extents.map((e) => e.mask)
   const c = makeCanvas(masks[0].width, masks[0].height)
   const ctx = ctx2d(c)
   ctx.drawImage(masks[0], 0, 0)
   ctx.globalCompositeOperation = 'destination-in'
   for (const m of masks.slice(1)) ctx.drawImage(m, 0, 0, c.width, c.height)
+  if (inside) {
+    const W = c.width
+    const H = c.height
+    const bottom = new Float32Array(W).fill(-1)
+    for (const e of extents) {
+      const k = e.colBottom.length / W
+      for (let x = 0; x < W; x++) bottom[x] = Math.max(bottom[x], e.colBottom[Math.min(e.colBottom.length - 1, Math.floor(x * k))] / k)
+    }
+    // un orlo più basso solo in poche colonne (un gancio) non conta: mediana larga
+    const r = Math.max(3, Math.round(W * 0.03))
+    const hem = Float32Array.from(bottom, (v, x) => {
+      if (v < 0) return -1
+      const near: number[] = []
+      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (bottom[j] >= 0) near.push(bottom[j])
+      near.sort((a, b) => a - b)
+      return near[near.length >> 1]
+    })
+    const keep = makeCanvas(W, H)
+    const kctx = ctx2d(keep)
+    kctx.fillStyle = '#000'
+    for (let x = 0; x < W; x++) kctx.fillRect(x, 0, 1, hem[x] < 0 ? H : hem[x] + 1)
+    ctx.drawImage(keep, 0, 0)
+    releaseCanvas(keep)
+  }
   return c
 }
 

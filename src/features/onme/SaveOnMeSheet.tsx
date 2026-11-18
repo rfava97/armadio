@@ -13,6 +13,7 @@ export function SaveOnMeSheet({
   layers,
   topsFrom,
   shoulderY,
+  inside,
   state,
 }: {
   open: boolean
@@ -24,16 +25,19 @@ export function SaveOnMeSheet({
   topsFrom: number
   /** riga delle spalle sulla foto, per i cappucci degli strati sotto */
   shoulderY?: number
+  /** per ogni strato del busto (dal più interno): tenuto dentro i capi sopra */
+  inside: boolean[]
   state: CamerinoState
 }) {
   const [image, setImage] = useState<{ blob: Blob; url: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const key = JSON.stringify(layers)
+  const insideKey = JSON.stringify(inside)
 
   useEffect(() => {
     let cancelled = false
     let url: string | null = null
-    composeOnMe(bodyUrl, JSON.parse(key) as string[], topsFrom, shoulderY)
+    composeOnMe(bodyUrl, JSON.parse(key) as string[], topsFrom, shoulderY, JSON.parse(insideKey) as boolean[])
       .then((blob) => {
         if (cancelled) return
         url = URL.createObjectURL(blob)
@@ -47,7 +51,7 @@ export function SaveOnMeSheet({
       cancelled = true
       if (url) URL.revokeObjectURL(url)
     }
-  }, [bodyUrl, key, topsFrom, shoulderY])
+  }, [bodyUrl, key, topsFrom, shoulderY, insideKey])
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Salva l'outfit">

@@ -11,19 +11,21 @@ const NONE: Covers = { masks: [], hoods: [] }
  *   l'ultimo non ne ha);
  * - hoods: per gli strati sotto con un cappuccio, la sua forma (data URL), da disegnare sopra i capi esterni.
  * `shoulder`: riga delle spalle nel fotogramma dei livelli (senza, niente cappucci).
+ * `inside`: per ogni strato, se è tenuto dentro i capi sopra (non esce sotto il loro orlo).
  */
-export function useCoverMasks(urls: string[], shoulder: number | undefined): Covers {
-  const key = `${shoulder ?? ''}\n${urls.join('\n')}`
+export function useCoverMasks(urls: string[], shoulder: number | undefined, inside: boolean[] = []): Covers {
+  const key = `${shoulder ?? ''}|${inside.map((v) => (v ? 1 : 0)).join('')}\n${urls.join('\n')}`
   const [covers, setCovers] = useState<{ key: string } & Covers>({ key: '', ...NONE })
   useEffect(() => {
-    const [line, ...list] = key.split('\n')
+    const [head, ...list] = key.split('\n')
     if (list.length < 2) return
     let cancelled = false
+    const [line, flags] = head.split('|')
     const top = line ? Number(line) : undefined
     Promise.all([
       Promise.all(
         list.map(async (_, i) => {
-          const c = await coverMask(list.slice(i + 1))
+          const c = await coverMask(list.slice(i + 1), flags[i] === '1')
           if (!c) return undefined
           const url = c.toDataURL('image/png')
           releaseCanvas(c)

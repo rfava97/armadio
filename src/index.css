@@ -91,6 +91,11 @@
     -webkit-tap-highlight-color: transparent;
     overscroll-behavior-y: none;
   }
+  /* niente scorrimento di lato: se qualcosa sfora la larghezza, la pagina non si sposta */
+  html,
+  body {
+    overflow-x: clip;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

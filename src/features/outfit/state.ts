@@ -36,6 +36,8 @@ export type Outfit = {
   tucked?: string[]
   /** modo di indossare scelto per ogni capo (id capo → id modo, es. felpa "Aperta") */
   wears?: Record<string, string>
+  /** strati del busto tenuti dentro i capi sopra: non escono sotto il loro orlo */
+  inside?: string[]
 }
 
 export type Active = { zone: StageZone; layer: number }
@@ -113,6 +115,7 @@ export function sanitize(s: CamerinoState, garments: Garment[]): CamerinoState {
     piedi: keep(s.outfit.piedi),
     tucked: (s.outfit.tucked ?? []).filter((id) => ids.has(id)),
     wears: Object.fromEntries(Object.entries(s.outfit.wears ?? {}).filter(([id]) => ids.has(id))),
+    inside: (s.outfit.inside ?? []).filter((id) => ids.has(id)),
   }
   const layer = s.active.zone === 'busto' ? Math.min(s.active.layer, outfit.busto.length - 1) : 0
   return { outfit, active: { zone: s.active.zone, layer: Math.max(0, layer) } }
@@ -229,4 +232,10 @@ export function wear(s: CamerinoState, g: Garment, garments: Garment[]): Camerin
 /** Sceglie il modo di indossare un capo (es. "Aperta"). */
 export function setWear(s: CamerinoState, garmentId: string, wearId: string): CamerinoState {
   return { ...s, outfit: { ...s.outfit, wears: { ...s.outfit.wears, [garmentId]: wearId } } }
+}
+
+/** Strato del busto dentro i capi sopra (non esce sotto il loro orlo) o fuori. */
+export function setInside(s: CamerinoState, garmentId: string, inside: boolean): CamerinoState {
+  const rest = (s.outfit.inside ?? []).filter((id) => id !== garmentId)
+  return { ...s, outfit: { ...s.outfit, inside: inside ? [...rest, garmentId] : rest } }
 }

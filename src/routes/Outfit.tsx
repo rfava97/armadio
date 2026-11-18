@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Heart, Plus, RotateCcw, Search, Shuffle, SlidersHorizontal, Sparkles, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpToLine, Heart, Plus, RotateCcw, Search, Shuffle, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
@@ -43,6 +43,7 @@ import {
   sanitize,
   saveState,
   setActiveId,
+  setInside,
   setWear,
   shuffle,
   STAGE_ZONES,
@@ -139,6 +140,21 @@ export default function Outfit() {
   const prepare = (items: OnMeTarget[]) => starter.start?.(items)
   const activeWears = activeGarment ? (wearsMap?.get(activeGarment.id) ?? []) : []
   const activeWear = activeGarment ? wearOf(activeGarment) : undefined
+  // strato del busto con capi sopra (su di te): si sceglie se esce sotto il loro orlo o resta dentro
+  const covered =
+    view === 'sudime' &&
+    !!state &&
+    !!activeGarment &&
+    state.active.zone === 'busto' &&
+    state.outfit.busto.some((id, i) => i > state.active.layer && !!id && garmentLayers.has(id)) &&
+    garmentLayers.has(activeGarment.id)
+  const inside = !!activeGarment && !!state?.outfit.inside?.includes(activeGarment.id)
+  // strati del busto con il livello pronto, dal più interno (per l'immagine da salvare)
+  const savedTops = (state?.outfit.busto ?? [])
+    .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
+    .filter((x): x is { g: GarmentWithThumb; i: number } => !!x.g && garmentLayers.has(x.g.id))
+    .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
+    .map((x) => x.g)
 
   const activeLayerUrl = activeWear && isWearReady(activeWear, bodyPath) ? layers.data?.get(activeWear.id) : undefined
   // la correzione vale solo finché resta attivo lo stesso modo (cambiando capo o vista si chiude)
@@ -333,24 +349,39 @@ export default function Outfit() {
             )}
           </div>
 
-          {/* modi di indossare il capo attivo (es. felpa chiusa / aperta) */}
-          {activeGarment && activeWears.length > 1 && (
-            <div className="mt-2 flex gap-2 overflow-x-auto [scrollbar-width:none]" role="radiogroup" aria-label={`Come indossi ${activeGarment.name}`}>
-              {activeWears.map((w) => (
+          {/* modi di indossare il capo attivo (es. felpa chiusa / aperta) e, se ha capi sopra, se esce sotto */}
+          {activeGarment && (activeWears.length > 1 || covered) && (
+            <div className="mt-2 flex items-center gap-2 overflow-x-auto [scrollbar-width:none]">
+              {activeWears.length > 1 && (
+                <div className="flex gap-2" role="radiogroup" aria-label={`Come indossi ${activeGarment.name}`}>
+                  {activeWears.map((w) => (
+                    <button
+                      key={w.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={activeWear?.id === w.id}
+                      onClick={() => update((s) => setWear(s, activeGarment.id, w.id))}
+                      className={cn(
+                        'h-8 shrink-0 rounded-full px-3 text-caption font-semibold transition-colors',
+                        activeWear?.id === w.id ? 'bg-navy text-on-accent' : 'bg-surface-muted text-fg',
+                      )}
+                    >
+                      {w.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {covered && (
                 <button
-                  key={w.id}
                   type="button"
-                  role="radio"
-                  aria-checked={activeWear?.id === w.id}
-                  onClick={() => update((s) => setWear(s, activeGarment.id, w.id))}
-                  className={cn(
-                    'h-8 shrink-0 rounded-full px-3 text-caption font-semibold transition-colors',
-                    activeWear?.id === w.id ? 'bg-navy text-on-accent' : 'bg-surface-muted text-fg',
-                  )}
+                  aria-pressed={inside}
+                  onClick={() => update((s) => setInside(s, activeGarment.id, !inside))}
+                  className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold"
                 >
-                  {w.name}
+                  {inside ? <ArrowUpToLine className="size-4 text-accent" aria-hidden /> : <ArrowDownToLine className="size-4 text-accent" aria-hidden />}
+                  {inside ? 'Dentro' : 'Esce sotto'}
                 </button>
-              ))}
+              )}
             </div>
           )}
 
@@ -387,12 +418,9 @@ export default function Outfit() {
               layers={[
                 ...(state.outfit.piedi && garmentLayers.get(state.outfit.piedi) ? [garmentLayers.get(state.outfit.piedi)!] : []),
                 ...(state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? [garmentLayers.get(state.outfit.gambe)!] : []),
-                ...state.outfit.busto
-                  .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
-                  .filter((x): x is { g: GarmentWithThumb; i: number } => !!x.g && garmentLayers.has(x.g.id))
-                  .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
-                  .map((x) => garmentLayers.get(x.g.id)!),
+                ...savedTops.map((g) => garmentLayers.get(g.id)!),
               ]}
+              inside={savedTops.map((g) => !!state.outfit.inside?.includes(g.id))}
               topsFrom={
                 (state.outfit.piedi && garmentLayers.get(state.outfit.piedi) ? 1 : 0) +
                 (state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0)

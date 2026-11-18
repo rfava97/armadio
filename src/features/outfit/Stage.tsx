@@ -234,9 +234,14 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
   const piedi = state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined
   const shapes = useTopShapes(busto.map(({ g }) => ({ id: g.id, url: g.thumbUrl })))
   // su di me: ogni strato del busto è nascosto dove esce dai capi sopra (es. felpa sotto la giacca)
-  const onMeTops = onMe ? busto.map(({ g }) => onMe.layers.get(g.id)).filter((u): u is string => !!u) : []
+  const tops = onMe ? busto.flatMap(({ g }) => (onMe.layers.get(g.id) ? [{ id: g.id, url: onMe.layers.get(g.id)! }] : [])) : []
+  const onMeTops = tops.map((t) => t.url)
   const shoulderLine = onMe?.shoulderY !== undefined ? layerRow(onMe.shoulderY, onMe.aspect) : undefined
-  const covers = useCoverMasks(onMeTops, shoulderLine)
+  const covers = useCoverMasks(
+    onMeTops,
+    shoulderLine,
+    tops.map((t) => (state.outfit.inside ?? []).includes(t.id)),
+  )
 
   if (onMe) {
     // il livello copre la foto allargata del margine usato nella generazione
