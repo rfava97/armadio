@@ -541,9 +541,75 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
     Float32Array.from(arr, (_, i) => f([...arr.slice(Math.max(0, i - r), Math.min(n, i + r + 1))]))
   const median = win(filled, 4, (v) => v.sort((a, b) => a - b)[v.length >> 1])
   const bottom = win(median, 5, (v) => v.reduce((a, b) => a + b, 0) / v.length)
-  // collo alto: solo il colletto, mai sotto la sua base (dove la felpa si allarga sulle spalle)
-  if (kind === 'collar') for (let i = 0; i < bottom.length; i++) bottom[i] = Math.min(bottom[i], end)
+  if (kind === 'collar') return collarShape(d, W, H, top, x0, x1, end)
   return { W, H, top, x0, bottom, kind }
+}
+
+/**
+ * Collo alto: il colletto, con le punte del bavero quando è aperto. Il colletto è separato dal resto
+ * della felpa da un bordo netto (un bordino, una cucitura a contrasto) che dal collo scende verso la
+ * spalla: per colonna, un po' più in largo del collo, si tiene tutto quello che sta sopra il bordo
+ * netto più basso vicino alla base del colletto. Dove un bordo netto non c'è il colletto finisce alla
+ * sua base (nelle colonne del collo) o non c'è (più in là: lì è la spalla).
+ */
+function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0: number, x1: number, base: number): HoodShape {
+  const g = Math.round(0.07 * W)
+  const c0 = Math.max(0, x0 - g)
+  const c1 = Math.min(W - 1, x1 + g)
+  const ye = Math.min(H - 4, Math.round(base + 0.045 * H))
+  const k = 2
+  const at = (x: number, y: number) => (y * W + x) * 4
+  const raw = new Float32Array(c1 - c0 + 1).fill(-1)
+  for (let x = c0; x <= c1; x++) {
+    const scores: [number, number][] = []
+    for (let y = top + k; y <= ye; y++) {
+      let ok = true
+      const up = [0, 0, 0]
+      const dn = [0, 0, 0]
+      for (let j = 1; j <= k && ok; j++) {
+        const u = at(x, y - j)
+        const v = at(x, y + j)
+        if (d[u + 3] < 200 || d[v + 3] < 200) ok = false
+        else for (let ch = 0; ch < 3; ch++) {
+          up[ch] += d[u + ch]
+          dn[ch] += d[v + ch]
+        }
+      }
+      if (!ok) continue
+      const sc = Math.hypot(up[0] - dn[0], up[1] - dn[1], up[2] - dn[2]) / k
+      scores.push([y, sc])
+    }
+    // il bordino: il primo bordo netto dall'alto, con il suo secondo lato se è subito sotto (più giù,
+    // es. una scritta sul petto, non conta)
+    // (soglia fissa: una scritta sul petto, più contrastata, non deve far scartare il bordino)
+    const strong = scores.filter(([, sc]) => sc >= 45)
+    const neck = x >= x0 && x <= x1
+    if (neck) {
+      // nelle colonne del collo il colletto arriva alla sua base, mai oltre
+      raw[x - c0] = base
+    } else if (strong.length) {
+      // di lato, una punta del colletto è sottile: il bordino sta subito sotto la cima della colonna
+      // (su una spalla il primo bordo netto, es. una scritta, è molto più in basso)
+      let colTop = top
+      while (colTop < ye && d[at(x, colTop) + 3] < 200) colTop++
+      const y1 = strong[0][0]
+      const pair = strong.filter(([y]) => y <= y1 + 0.02 * H)
+      const b = Math.min(ye, pair[pair.length - 1][0] + k)
+      if (y1 - colTop <= 0.03 * H) raw[x - c0] = b
+    }
+  }
+  // le colonne in più ai lati valgono solo se attaccate al colletto senza interruzioni
+  for (let x = x0 - 1; x >= c0; x--) if (raw[x - c0] < 0) for (let j = x; j >= c0; j--) raw[j - c0] = -1
+  for (let x = x1 + 1; x <= c1; x++) if (raw[x - c0] < 0) for (let j = x; j <= c1; j++) raw[j - c0] = -1
+  // via i salti isolati (mediana corta)
+  const bottom = Float32Array.from(raw, (v, i) => {
+    if (v < 0) return -1
+    const near: number[] = []
+    for (let j = Math.max(0, i - 2); j <= Math.min(raw.length - 1, i + 2); j++) if (raw[j] >= 0) near.push(raw[j])
+    near.sort((a, b) => a - b)
+    return near[near.length >> 1]
+  })
+  return { W, H, top, x0: c0, bottom, kind: 'collar' }
 }
 
 /** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
@@ -616,6 +682,9 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     const f = Math.min(end.length - 1, Math.max(0, X / S - xs))
     const i = Math.floor(f)
     const j = Math.min(end.length - 1, i + 1)
+    // colonne senza colletto (-1): niente, e niente interpolazione verso di loro
+    if (end[i] < 0) return -1
+    if (end[j] < 0) return end[i] * S
     return (end[i] + (end[j] - end[i]) * (f - i)) * S
   }
   const y0 = top * S
