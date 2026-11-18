@@ -353,6 +353,7 @@ function layerExtent(url: string): Promise<Extent> {
       const e = 2
       // aperture vere (vuoto al centro con il capo da entrambi i lati: zip aperta, scollo): lì lo
       // strato sotto si vede sempre, anche contro la regola per colonne qui sotto
+      const vHalf = W * 0.06
       const gaps = makeCanvas(W, H)
       const gctx = ctx2d(gaps)
       gctx.fillStyle = '#000'
@@ -368,14 +369,13 @@ function layerExtent(url: string): Promise<Extent> {
         const right = list.find(([a0]) => a0 > cx)
         const g0 = left ? left[1] + 1 - e : 0
         const g1 = right ? right[0] - 1 + e : W - 1
-        // solo dove il vuoto è aperto verso l'alto o verso il basso (zip aperta fino al collo, giacca
-        // aperta fino all'orlo): un buco chiuso sopra e sotto dal capo (es. tra il colletto e la
-        // spalla) non è un'apertura e lì sotto non si vede niente
-        for (let x = Math.max(0, g0); x <= Math.min(W - 1, g1); x++) {
-          const under = (left && x <= left[1]) || (right && x >= right[0])
-          if (!under && colTop[x] >= 0 && colTop[x] < y && colBottom[x] > y) continue
-          ctx.fillRect(x, y, 1, 1)
-          if (left && right) gctx.fillRect(x, y, 1, 1)
+        ctx.fillRect(g0, y, g1 - g0 + 1, 1)
+        // apertura vera (capo da entrambi i lati), solo vicino al centro: la V di una zip o di uno
+        // scollo. Più in là (es. un vuoto tra colletto e spalla) vale la regola per colonne
+        if (left && right) {
+          const a0 = Math.max(g0, Math.round(cx - vHalf))
+          const a1 = Math.min(g1, Math.round(cx + vHalf))
+          if (a1 >= a0) gctx.fillRect(a0, y, a1 - a0 + 1, 1)
         }
       }
       // bordo ammorbidito (un pixel isolato non alza tutta la colonna)
