@@ -457,6 +457,17 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
   const wide = widths[widths.length >> 1] >= 0.15 * W
   if (end - top < 0.03 * H && !wide) return null
   const kind = wide ? 'hood' : 'collar'
+  if (kind === 'collar') {
+    // il colletto finisce appena lo strato si allarga verso le spalle (oltre un terzo della larghezza
+    // del colletto): così non spuntano le punte delle spalle
+    const firstHalf: number[] = []
+    for (let y = top; y < top + Math.max(1, (end - top) >> 1); y++) firstHalf.push(width(y))
+    firstHalf.sort((a, b) => a - b)
+    const collar = firstHalf[firstHalf.length >> 1]
+    let e2 = top + 1
+    while (e2 < end && width(e2) <= collar * 1.33) e2++
+    end = e2
+  }
 
   // colonne del cappuccio: solo quelle della parte stretta (niente spalle)
   let x0 = W
@@ -535,8 +546,8 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
   return { W, H, top, x0, bottom, kind }
 }
 
-/** il cappuccio scende sopra i capi esterni solo di poco: sembra appoggiato sul colletto */
-const HOOD_OVERLAP = 0.012
+/** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
+const HOOD_OVERLAP = 0.04
 
 /**
  * Forma del cappuccio da disegnare sopra i capi `above`, a piena risoluzione (`size`: lato lungo del
@@ -564,25 +575,37 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       if (t >= 0) outerTop[x] = outerTop[x] < 0 ? t / k : Math.min(outerTop[x], t / k)
     }
   }
-  // il collo alto sta in piedi davanti al colletto dei capi sopra: intero fino alla sua base
+  // Collo alto: in piedi davanti al colletto dei capi sopra, intero fino alla sua base.
+  // Cappuccio: tirato fuori e steso sul colletto dei capi sopra, fino a poco sotto il suo bordo alto
+  // (il bordo vero del cappuccio sulle spalle è un'ombra leggera, non affidabile), solo nelle colonne
+  // della parte stretta: sulle spalle cappuccio e felpa sono dello stesso colore e non si distinguono.
   const overlap = HOOD_OVERLAP * H
-  const end = Float32Array.from(bottom, (b, i) => {
-    const t = outerTop[x0 + i]
-    return t >= 0 && kind === 'hood' ? Math.min(b, t + overlap) : b
-  })
+  const grow = 0
+  const xs = Math.max(0, x0 - grow)
+  const xe = Math.min(W - 1, x0 + bottom.length - 1 + grow)
+  const end = new Float32Array(xe - xs + 1)
+  for (let x = xs; x <= xe; x++) {
+    const own = x >= x0 && x < x0 + bottom.length ? bottom[x - x0] : -1
+    const t = outerTop[x]
+    // ai lati il cappuccio scende sempre meno: il profilo si chiude con una curva, non con un taglio
+    const edge = Math.min(x - xs, xe - x) / Math.max(1, 0.035 * W)
+    const k = Math.min(1, edge)
+    const depth = overlap * k * k * (3 - 2 * k)
+    end[x - xs] = kind === 'collar' ? own : t >= 0 ? t + depth : own
+  }
   // a piena risoluzione: colonne interpolate, bordo di 2 px
   const S = size / Math.max(W, H)
   const c = makeCanvas(W * S, H * S)
   const ctx = ctx2d(c)
   ctx.fillStyle = '#000'
   const at = (X: number) => {
-    const f = Math.min(end.length - 1, Math.max(0, X / S - x0))
+    const f = Math.min(end.length - 1, Math.max(0, X / S - xs))
     const i = Math.floor(f)
     const j = Math.min(end.length - 1, i + 1)
     return (end[i] + (end[j] - end[i]) * (f - i)) * S
   }
   const y0 = top * S
-  for (let X = Math.floor(x0 * S); X < Math.ceil((x0 + end.length) * S); X++) {
+  for (let X = Math.floor(xs * S); X < Math.ceil((xs + end.length) * S); X++) {
     const b = at(X)
     if (b <= y0) continue
     ctx.globalAlpha = 1
