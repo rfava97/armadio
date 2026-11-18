@@ -541,7 +541,18 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
     Float32Array.from(arr, (_, i) => f([...arr.slice(Math.max(0, i - r), Math.min(n, i + r + 1))]))
   const median = win(filled, 4, (v) => v.sort((a, b) => a - b)[v.length >> 1])
   const bottom = win(median, 5, (v) => v.reduce((a, b) => a + b, 0) / v.length)
-  if (kind === 'collar') return collarShape(d, W, H, top, x0, x1, end)
+  if (kind === 'collar') {
+    // il bordino è sottile: a 400 px sparisce, il colletto si analizza a piena risoluzione
+    const big = await bitmapOf(url, 1200)
+    const bc = makeCanvas(big.width, big.height)
+    ctx2d(bc).drawImage(big, 0, 0)
+    big.close()
+    const bd = ctx2d(bc).getImageData(0, 0, bc.width, bc.height).data
+    const f = bc.width / W
+    const shape = collarShape(bd, bc.width, bc.height, Math.round(top * f), Math.round(x0 * f), Math.round(x1 * f), Math.round(end * f))
+    releaseCanvas(bc)
+    return shape
+  }
   return { W, H, top, x0, bottom, kind }
 }
 
@@ -569,7 +580,7 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
       if (d[i + 3] < 200) continue
       const mx = Math.max(d[i], d[i + 1], d[i + 2])
       const mn = Math.min(d[i], d[i + 1], d[i + 2])
-      if (mn > 165 && mx - mn < 55) low = y
+      if (mn > 130 && mx - mn < 70) low = y
     }
     // nelle colonne del collo il colletto arriva almeno alla sua base, e fino al bordino se scende
     // (il bavero aperto); di lato c'è solo dove c'è il bordino (le punte)
@@ -578,7 +589,7 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
   }
   // le colonne in più ai lati valgono solo se attaccate al colletto: un buco corto (fino a 5 colonne)
   // tra colonne buone si riempie con la media delle vicine, uno più lungo chiude la punta
-  const gap = 5
+  const gap = Math.max(2, Math.round(0.012 * W))
   const walk = (from: number, to: number, step: 1 | -1) => {
     let last = from - step
     for (let x = from; step > 0 ? x <= to : x >= to; x += step) {
@@ -602,10 +613,11 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
   // il bordo basso del colletto è una linea continua (la diagonale del bordino): niente avvallamenti
   // stretti dove in una colonna si è trovato solo il bordino di sopra. Ogni colonna prende il più
   // basso tra lei e le vicine (4 per lato), senza allargarsi a colonne senza colletto.
+  const spread = Math.max(1, Math.round(0.006 * W))
   const dil = Float32Array.from(raw, (v, i) => {
     if (v < 0) return -1
     let m = v
-    for (let j = Math.max(0, i - 4); j <= Math.min(raw.length - 1, i + 4); j++) if (raw[j] > m) m = raw[j]
+    for (let j = Math.max(0, i - spread); j <= Math.min(raw.length - 1, i + spread); j++) if (raw[j] > m) m = raw[j]
     return m
   })
   raw.set(dil)
@@ -613,7 +625,7 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
   const bottom = Float32Array.from(raw, (v, i) => {
     if (v < 0) return -1
     const near: number[] = []
-    for (let j = Math.max(0, i - 2); j <= Math.min(raw.length - 1, i + 2); j++) if (raw[j] >= 0) near.push(raw[j])
+    for (let j = Math.max(0, i - spread); j <= Math.min(raw.length - 1, i + spread); j++) if (raw[j] >= 0) near.push(raw[j])
     near.sort((a, b) => a - b)
     return near[near.length >> 1]
   })
