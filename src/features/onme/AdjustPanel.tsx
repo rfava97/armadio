@@ -110,7 +110,7 @@ export function AdjustPanel({
         ))}
       </div>
       {sliders.map((s) => (
-        <label key={s.key} className="grid grid-cols-[7.5rem_1fr_2.75rem] items-center gap-2 text-caption">
+        <label key={s.key} className="grid grid-cols-[6.75rem_minmax(0,1fr)_2.75rem] items-center gap-2 text-caption">
           <span className="text-fg-muted">{s.label}</span>
           <input
             type="range"
@@ -120,7 +120,7 @@ export function AdjustPanel({
             value={value[s.key]}
             disabled={saving}
             onChange={(e) => onChange({ ...value, [s.key]: Number(e.target.value) })}
-            className="h-8 w-full accent-[var(--color-accent)]"
+            className="h-8 w-full min-w-0 accent-[var(--color-accent)]"
           />
           <span className="text-right tabular-nums">{s.show(value[s.key])}</span>
         </label>

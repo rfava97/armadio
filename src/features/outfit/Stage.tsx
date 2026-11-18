@@ -5,6 +5,7 @@ import type { GarmentWithThumb } from '@/features/garments/api'
 import type { Category } from '@/lib/garments'
 import { ON_ME_PAD } from '@/lib/onMe'
 import { useTopShapes } from '@/lib/image/topShape'
+import { useCoverMasks } from './useCoverMasks'
 import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
 
 type Box = { left: number; top: number; width: number; height: number }
@@ -67,7 +68,7 @@ const PEEK = 0.16 // quota di schermo occupata dal capo che si intravede ai lati
 const SHADOW = 'drop-shadow(0 3px 6px rgba(11, 31, 68, 0.22))'
 
 /** fit "height": la foto è alta quanto il riquadro e centrata (larghezza naturale) */
-type Item = { key: string; g: GarmentWithThumb; zone: StageZone; layer: number; box: Box; z: number; src: string; fit?: 'height' }
+type Item = { key: string; g: GarmentWithThumb; zone: StageZone; layer: number; box: Box; z: number; src: string; fit?: 'height'; mask?: string }
 
 /**
  * Il palco del camerino. Swipe orizzontale: capo precedente/successivo della zona attiva.
@@ -196,6 +197,9 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
   const gambe = state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined
   const piedi = state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined
   const shapes = useTopShapes(busto.map(({ g }) => ({ id: g.id, url: g.thumbUrl })))
+  // su di me: ogni strato del busto è nascosto dove esce dai capi sopra (es. felpa sotto la giacca)
+  const onMeTops = onMe ? busto.map(({ g }) => onMe.layers.get(g.id)).filter((u): u is string => !!u) : []
+  const covers = useCoverMasks(onMeTops)
 
   if (onMe) {
     // il livello copre la foto allargata del margine usato nella generazione
@@ -206,7 +210,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     if (gambe && gl) items.push({ key: 'gambe', g: gambe, zone: 'gambe', layer: 0, box, z: 10, src: gl })
     busto.forEach(({ g, i }, n) => {
       const src = onMe.layers.get(g.id)
-      if (src) items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src })
+      if (src) items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src, mask: covers[onMeTops.indexOf(src)] })
     })
   } else {
     const full = (top: number, height: number, shift = 0): Box => ({ left: shift, top, width: size.w, height })
@@ -308,7 +312,15 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
           )}
 
           {items.map((it) => {
-            const style = { ...it.box, zIndex: it.z, filter: onMe ? undefined : SHADOW }
+            const mask = it.mask && {
+              maskImage: `url(${it.mask})`,
+              WebkitMaskImage: `url(${it.mask})`,
+              maskSize: '100% 100%',
+              WebkitMaskSize: '100% 100%',
+              maskRepeat: 'no-repeat',
+              WebkitMaskRepeat: 'no-repeat',
+            }
+            const style = { ...it.box, zIndex: it.z, filter: onMe ? undefined : SHADOW, ...mask }
             if (!isActive(it)) {
               return (
                 <div key={it.key} className="pointer-events-none absolute" style={style}>

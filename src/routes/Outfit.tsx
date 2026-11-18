@@ -417,6 +417,7 @@ export default function Outfit() {
                   .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
                   .map((x) => garmentLayers.get(x.g.id)!),
               ]}
+              topsFrom={state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0}
               state={state}
             />
           )}

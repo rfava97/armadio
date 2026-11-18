@@ -11,6 +11,7 @@ export function SaveOnMeSheet({
   onClose,
   bodyUrl,
   layers,
+  topsFrom,
   state,
 }: {
   open: boolean
@@ -18,6 +19,8 @@ export function SaveOnMeSheet({
   bodyUrl: string
   /** URL dei livelli nell'ordine in cui si sovrappongono */
   layers: string[]
+  /** da quale livello iniziano gli strati del busto (quelli sotto si nascondono dove escono) */
+  topsFrom: number
   state: CamerinoState
 }) {
   const [image, setImage] = useState<{ blob: Blob; url: string } | null>(null)
@@ -27,7 +30,7 @@ export function SaveOnMeSheet({
   useEffect(() => {
     let cancelled = false
     let url: string | null = null
-    composeOnMe(bodyUrl, JSON.parse(key) as string[])
+    composeOnMe(bodyUrl, JSON.parse(key) as string[], topsFrom)
       .then((blob) => {
         if (cancelled) return
         url = URL.createObjectURL(blob)
@@ -41,7 +44,7 @@ export function SaveOnMeSheet({
       cancelled = true
       if (url) URL.revokeObjectURL(url)
     }
-  }, [bodyUrl, key])
+  }, [bodyUrl, key, topsFrom])
 
   return (
     <BottomSheet open={open} onClose={onClose} title="Salva l'outfit">

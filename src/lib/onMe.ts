@@ -207,7 +207,7 @@ export async function makeOnMeLayer(
  * L'immagine "Su di me" come si vede nel camerino: la tua foto e, sopra, i livelli dei capi
  * (pantaloni, poi gli strati del busto dal più interno) su fondo chiaro. Per salvarla nei preferiti.
  */
-export async function composeOnMe(bodyUrl: string, layerUrls: string[]): Promise<Blob> {
+export async function composeOnMe(bodyUrl: string, layerUrls: string[], topsFrom = layerUrls.length): Promise<Blob> {
   const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
   const body = await load(bodyUrl)
   const w = body.width
@@ -219,12 +219,85 @@ export async function composeOnMe(bodyUrl: string, layerUrls: string[]): Promise
   ctx.fillRect(0, 0, w, h)
   ctx.drawImage(body, 0, 0)
   body.close()
-  for (const u of layerUrls) {
+  const tops = layerUrls.slice(topsFrom)
+  for (const [n, u] of layerUrls.entries()) {
     const l = await load(u)
-    ctx.drawImage(l, -pad, -pad, w + pad * 2, h + pad * 2)
+    const k = n - topsFrom
+    const cover = k >= 0 ? await coverMask(tops.slice(k + 1)) : null
+    if (cover) {
+      // lo strato coperto, ritagliato dove esce dai capi sopra
+      const t = makeCanvas(l.width, l.height)
+      const tctx = ctx2d(t)
+      tctx.drawImage(l, 0, 0)
+      tctx.globalCompositeOperation = 'destination-in'
+      tctx.drawImage(cover, 0, 0, t.width, t.height)
+      ctx.drawImage(t, -pad, -pad, w + pad * 2, h + pad * 2)
+      releaseCanvas(t)
+    } else {
+      ctx.drawImage(l, -pad, -pad, w + pad * 2, h + pad * 2)
+    }
     l.close()
   }
-  return new Promise((ok, ko) => c.toBlob((b) => (b ? ok(b) : ko(new Error('Immagine non valida'))), 'image/png'))
+  const blob = await new Promise<Blob>((ok, ko) => c.toBlob((b) => (b ? ok(b) : ko(new Error('Immagine non valida'))), 'image/png'))
+  releaseCanvas(c)
+  return blob
+}
+
+/**
+ * Strati del busto "su di me": ogni capo è generato da solo, quindi una felpa sotto una giacca
+ * spunta ai lati delle maniche e sulle spalle. Riga per riga, lo strato sotto resta solo tra il punto
+ * più a sinistra e quello più a destra dei capi sopra; dove sopra non c'è niente (cappuccio sopra il
+ * collo, orlo che esce sotto) resta tutto. Dentro una giacca aperta si vede.
+ * Maschera alfa (opaca = visibile), stesso fotogramma dei livelli.
+ */
+const extents = new Map<string, Promise<HTMLCanvasElement>>()
+
+function layerExtent(url: string): Promise<HTMLCanvasElement> {
+  let p = extents.get(url)
+  if (!p) {
+    p = (async () => {
+      const bmp = await bitmapOf(url, 400)
+      const W = bmp.width
+      const H = bmp.height
+      const c = makeCanvas(W, H)
+      const ctx = ctx2d(c)
+      ctx.drawImage(bmp, 0, 0)
+      bmp.close()
+      const d = ctx.getImageData(0, 0, W, H).data
+      ctx.clearRect(0, 0, W, H)
+      ctx.fillStyle = '#000'
+      const m = Math.round(W * 0.01)
+      for (let y = 0; y < H; y++) {
+        let l = -1
+        let r = -1
+        for (let x = 0; x < W; x++) {
+          if (d[(y * W + x) * 4 + 3] > 100) {
+            if (l < 0) l = x
+            r = x
+          }
+        }
+        if (l < 0) ctx.fillRect(0, y, W, 1)
+        else ctx.fillRect(l - m, y, r - l + 1 + 2 * m, 1)
+      }
+      return c
+    })()
+    extents.set(url, p)
+    // gli URL firmati cambiano: non tengo in memoria quelli vecchi all'infinito
+    if (extents.size > 24) extents.delete(extents.keys().next().value!)
+  }
+  return p
+}
+
+/** Dove si vede uno strato che ha sopra questi livelli (null se sopra non c'è niente). */
+export async function coverMask(above: string[]): Promise<HTMLCanvasElement | null> {
+  if (!above.length) return null
+  const masks = await Promise.all(above.map(layerExtent))
+  const c = makeCanvas(masks[0].width, masks[0].height)
+  const ctx = ctx2d(c)
+  ctx.drawImage(masks[0], 0, 0)
+  ctx.globalCompositeOperation = 'destination-in'
+  for (const m of masks.slice(1)) ctx.drawImage(m, 0, 0, c.width, c.height)
+  return c
 }
 
 /**
