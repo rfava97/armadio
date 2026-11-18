@@ -599,6 +599,16 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
   }
   walk(x0 - 1, c0, -1)
   walk(x1 + 1, c1, 1)
+  // il bordo basso del colletto è una linea continua (la diagonale del bordino): niente avvallamenti
+  // stretti dove in una colonna si è trovato solo il bordino di sopra. Ogni colonna prende il più
+  // basso tra lei e le vicine (4 per lato), senza allargarsi a colonne senza colletto.
+  const dil = Float32Array.from(raw, (v, i) => {
+    if (v < 0) return -1
+    let m = v
+    for (let j = Math.max(0, i - 4); j <= Math.min(raw.length - 1, i + 4); j++) if (raw[j] > m) m = raw[j]
+    return m
+  })
+  raw.set(dil)
   // via i salti isolati (mediana corta)
   const bottom = Float32Array.from(raw, (v, i) => {
     if (v < 0) return -1
