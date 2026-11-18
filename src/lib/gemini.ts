@@ -1,4 +1,5 @@
 import type { Garment } from './garments'
+import { describeWear, parseWear, sizeRules } from './wearStyle'
 
 /**
  * Collegamento a Gemini: niente API. L'app copia un prompt con l'outfit e apre l'app Gemini
@@ -48,27 +49,18 @@ export function geminiPrompt(items: Garment[], notes = '', worn: Set<string> = n
  * Prompt per far creare a Gemini la foto indossata di un capo: un modello qualunque, con la tua
  * altezza, che lo porta come indicato (es. "aperta"). Nessuna tua foto: solo quella del capo.
  */
-const HOW: Record<string, string> = {
-  aperta: 'open (fully unzipped / unbuttoned), hanging loose at the front',
-  aperto: 'open (fully unzipped / unbuttoned), hanging loose at the front',
-  chiusa: 'closed (fully zipped / buttoned)',
-  chiuso: 'closed (fully zipped / buttoned)',
-}
-
 export function geminiFitPrompt(g: Garment, howIt: string, heightCm: number | null | undefined): string {
   const bottom = g.zone === 'gambe'
-  const how = HOW[howIt.trim().toLowerCase()] ?? howIt
+  const style = parseWear(howIt)
   return [
     'Fashion e-commerce photo. Use the garment in the attached image.',
-    `Create a photo of a man wearing exactly this ${KIND[g.category] ?? 'garment'}, worn like this: ${how.trim() || 'as it is normally worn'}.`,
+    `Create a photo of a man wearing exactly this ${KIND[g.category] ?? 'garment'}, worn like this: ${describeWear(style, g.category)}.`,
     `Model: about ${Math.round(heightCm ?? 175)} cm tall, average build, standing straight and facing the camera, arms slightly away from the body, full body visible from head to feet.`,
     bottom
       ? 'He also wears a plain fitted white t-shirt and is barefoot, so the garment is clearly visible.'
       : 'He also wears plain fitted black trousers and is barefoot, so the garment is clearly visible.',
     'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. Natural folds and drape, true to how it is worn above.',
-    /oversize|larg/i.test(howIt)
-      ? 'Size: oversized as described, keeping the real proportions of the garment.'
-      : 'Size: true to size, a regular fit for this model: shoulder seams on the shoulder points, sleeves ending at the wrist bone, real length of the garment. Not oversized.',
+    sizeRules(style, g.category, 'model'),
     'Plain light grey background, soft even studio light, sharp photo.',
     'Output: one single full-body image.',
   ].join('\n')

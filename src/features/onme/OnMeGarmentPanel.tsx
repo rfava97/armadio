@@ -7,6 +7,7 @@ import { Spinner } from '@/components/Spinner'
 import { useSignedImage } from '@/features/garments/api'
 import { useProfile } from '@/features/profile/api'
 import { geminiFitPrompt, KIND } from '@/lib/gemini'
+import { WEAR_SUGGESTIONS } from '@/lib/wearStyle'
 import { geminiShapePrompt, makeSilhouette, shareForGeminiShape } from '@/lib/onMeGemini'
 import { garmentImageUrl } from '@/lib/tryon'
 import { useBodyPhotoUrl } from '@/features/profile/api'
@@ -25,9 +26,6 @@ import {
   type Wear,
 } from './api'
 
-/** Suggerimenti per i capi che si possono portare aperti o chiusi. */
-const OPENABLE = ['camicie', 'felpe_maglioni', 'giacche_cappotti']
-const SUGGESTED = ['Chiusa', 'Aperta']
 
 /**
  * Dettaglio capo → "Come lo indossi": uno o più modi (es. felpa chiusa e aperta), ognuno con la sua
@@ -42,7 +40,7 @@ export function OnMeGarmentPanel({ garment }: { garment: Garment }) {
 
   const wears = wearsMap?.get(garment.id) ?? []
   const names = new Set(wears.map((w) => w.name.toLowerCase()))
-  const suggestions = (OPENABLE.includes(garment.category) ? SUGGESTED : []).filter((n) => !names.has(n.toLowerCase()))
+  const suggestions = (WEAR_SUGGESTIONS[garment.category] ?? []).filter((n) => !names.has(n.toLowerCase()))
   const add = (name: string) => {
     if (!name.trim()) return
     create.mutate({ garmentId: garment.id, name }, { onSuccess: () => setAdding(null) })
@@ -54,6 +52,7 @@ export function OnMeGarmentPanel({ garment }: { garment: Garment }) {
         <span className="text-label font-medium text-fg-muted">Come lo indossi</span>
         <span className="text-caption text-fg-muted">
           Per ogni modo, una foto in cui qualcuno lo porta così (puoi crearla con Gemini): su di te avrà la stessa vestibilità.
+          Il nome guida Gemini: Aperta, Chiusa, Cropped, Oversize, Baggy, Slim, Arrotolate (anche insieme).
         </span>
       </div>
 
@@ -83,7 +82,7 @@ export function OnMeGarmentPanel({ garment }: { garment: Garment }) {
                 add(adding)
               }}
             >
-              <Input autoFocus value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="Es. Maniche arrotolate" className="flex-1" />
+              <Input autoFocus value={adding} onChange={(e) => setAdding(e.target.value)} placeholder="Es. Aperta oversize, maniche arrotolate" className="flex-1" />
               <Button size="md" className="h-11 px-4" type="submit" disabled={!adding.trim() || create.isPending}>
                 Aggiungi
               </Button>
