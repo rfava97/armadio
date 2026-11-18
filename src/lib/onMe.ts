@@ -916,6 +916,9 @@ export function renderAdjusted(
 /** Immagine del livello per l'anteprima della correzione (più piccola, per seguire il dito). */
 export const previewBitmap = (url: string) => bitmapOf(url, 520)
 
+/** Il livello a piena risoluzione, per l'anteprima nitida a dito fermo. */
+export const fullBitmap = (url: string) => bitmapOf(url)
+
 /** Il livello corretto a piena risoluzione, da salvare. */
 export async function adjustLayer(url: string, a: LayerAdjust, g: AdjustGuide, category: OnMeCategory): Promise<HTMLCanvasElement> {
   const bmp = await bitmapOf(url)

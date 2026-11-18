@@ -126,6 +126,38 @@ export async function shareForGeminiShape(sil: HTMLCanvasElement, garmentUrl: st
   }
 }
 
+/**
+ * Via le linee sottili (fino a 2·t pixel) che hanno il vuoto da entrambi i lati, sopra e sotto o a
+ * destra e a sinistra: segni che Gemini disegna sul manichino (una riga sulla vita, un'ombra) e che
+ * dopo aver tolto il verde restano come righe chiare. Un pezzo vero del capo non è così sottile tra
+ * due vuoti.
+ */
+function removeThinLines(d: Uint8ClampedArray, W: number, H: number, t: number) {
+  const empty = (x: number, y: number) => x < 0 || y < 0 || x >= W || y >= H || d[(y * W + x) * 4 + 3] === 0
+  const span = 2 * t + 1
+  const remove: number[] = []
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (empty(x, y)) continue
+      // spessore verticale: quanti pixel pieni sopra e sotto prima del vuoto
+      let up = 0
+      while (up <= span && !empty(x, y - up - 1)) up++
+      let dn = 0
+      if (up <= span) while (dn <= span && !empty(x, y + dn + 1)) dn++
+      if (up + dn + 1 <= 2 * t) {
+        remove.push(y * W + x)
+        continue
+      }
+      let lf = 0
+      while (lf <= span && !empty(x - lf - 1, y)) lf++
+      let rt = 0
+      if (lf <= span) while (rt <= span && !empty(x + rt + 1, y)) rt++
+      if (lf + rt + 1 <= 2 * t) remove.push(y * W + x)
+    }
+  }
+  for (const i of remove) d[i * 4 + 3] = 0
+}
+
 const maskOf = (c: HTMLCanvasElement, test: (d: Uint8ClampedArray, i: number) => boolean) => {
   const d = ctx2d(c).getImageData(0, 0, c.width, c.height).data
   const m = new Uint8Array(c.width * c.height)
@@ -246,6 +278,7 @@ export async function importGeminiShape(
     const top = Math.round((splitFrac - 0.03) * H)
     for (let i = 0; i < top * W; i++) d[i * 4 + 3] = 0
   }
+  removeThinLines(d, W, H, 2)
   lctx.putImageData(img, 0, 0)
   // via i puntini rimasti: restano le parti del capo (anche separate, come i due lati di una giacca aperta)
   keepMainParts(layer, 0.05, 100)

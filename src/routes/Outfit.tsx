@@ -56,7 +56,7 @@ type NavState = { garmentId?: string } | null
 
 export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
-  const { data: profile } = useProfile()
+  const { data: profile, isPending: profilePending } = useProfile()
   const settings = useCamerinoSettings()
   const queue = useOnMeQueue()
   // la foto serve per "Su di me" e per "Provalo su di me"
@@ -97,7 +97,8 @@ export default function Outfit() {
   }, [state])
 
   // i capi si vedono sempre su di te; il tavolo (capi stesi) resta solo se manca la tua foto
-  const view: CamerinoView = bodyPath ? 'sudime' : 'tavolo'
+  // (finché il profilo non è arrivato non so se la foto c'è: aspetto senza mostrare il tavolo)
+  const view: CamerinoView = bodyPath || profilePending ? 'sudime' : 'tavolo'
 
   const byId = useMemo(() => new Map((garments ?? []).map((g) => [g.id, g])), [garments])
   const activeGarment: GarmentWithThumb | undefined = state ? byId.get(getActiveId(state) ?? '') : undefined
