@@ -51,15 +51,34 @@ const HOW: Record<string, string> = {
   aperto: 'open (fully unzipped / unbuttoned), the two front panels hanging loose',
   chiusa: 'closed (fully zipped / buttoned)',
   chiuso: 'closed (fully zipped / buttoned)',
+  oversize: 'oversized, loose and boxy, dropped shoulders',
+  aderente: 'slim, close-fitting',
+}
+
+/** Dove finisce il capo, per categoria: la taglia giusta, non più lungo né più largo. */
+const LENGTH: Record<string, string> = {
+  canotte: 'hem at the belt line',
+  maglie: 'hem at the belt line, just covering the waistband',
+  camicie: 'hem just below the belt line',
+  felpe_maglioni: 'hem at the belt line, just covering the waistband; ribbed cuffs exactly at the wrist bone',
+  giacche_cappotti: 'length as the real garment in image 2 (a short jacket ends at the belt line)',
+  pantaloni: 'waistband at the waist, hem at the ankle',
+  jeans: 'waistband at the waist, hem at the ankle',
 }
 
 /** Prompt per disegnare solo il capo sulla sagoma. */
-export function geminiShapePrompt(kind: string, howIt: string): string {
-  const how = HOW[howIt.trim().toLowerCase()] ?? (howIt.trim() || 'as it is normally worn')
+export function geminiShapePrompt(kind: string, howIt: string, category?: string): string {
+  const name = howIt.trim().toLowerCase()
+  const how = HOW[name] ?? (howIt.trim() || 'as it is normally worn')
+  const oversize = /oversize|larg/.test(name)
   return [
     'Image 1 is a flat green mannequin silhouette seen from the front, on a white background. Image 2 is a garment.',
     `Dress the green mannequin with ONLY this ${kind}, worn like this: ${how}.`,
-    'Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with a realistic fit, natural folds and drape (do not make loose or oversized garments tight). The collar sits around the neck, below the chin; the cuffs end at the wrists.',
+    'Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with natural folds and drape.',
+    oversize
+      ? 'Size: oversized as described, but keep the real proportions of the garment in image 2.'
+      : `Size: TRUE TO SIZE for this body, a regular fit, not oversized and not longer than needed. Shoulder seams exactly on the shoulder points, sleeves ending at the wrist bone with the hands fully visible, ${LENGTH[category ?? ''] ?? 'real length of the garment'}. Keep the real proportions of the garment in image 2.`,
+    'The collar sits around the neck, below the chin.',
     'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, open front, hands, legs) keep the mannequin exactly the same flat green as in image 1. Do not draw a person, skin, face, hands or shadows on the mannequin.',
     'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. The inside of the garment (lining, back of the collar) may be visible where it naturally would.',
     'Do not move, resize or crop the mannequin: same canvas size, framing and position as image 1. Plain white background, no shadows.',

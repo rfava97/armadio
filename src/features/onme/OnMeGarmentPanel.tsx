@@ -123,7 +123,7 @@ function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
       await shareForGeminiShape(
         sil.canvas,
         await garmentImageUrl(garment.image_path),
-        geminiShapePrompt(KIND[garment.category] ?? 'garment', name === 'Base' ? '' : name),
+        geminiShapePrompt(KIND[garment.category] ?? 'garment', name === 'Base' ? '' : name, garment.category),
       )
       setShapeMsg('Prompt copiato. In Gemini allega sagoma e capo, incolla il prompt, salva il risultato e importalo qui.')
     } catch (e) {

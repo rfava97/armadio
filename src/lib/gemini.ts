@@ -65,7 +65,10 @@ export function geminiFitPrompt(g: Garment, howIt: string, heightCm: number | nu
     bottom
       ? 'He also wears a plain fitted white t-shirt and is barefoot, so the garment is clearly visible.'
       : 'He also wears plain fitted black trousers and is barefoot, so the garment is clearly visible.',
-    'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. Realistic fit with natural folds and drape, true to how it is worn above.',
+    'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. Natural folds and drape, true to how it is worn above.',
+    /oversize|larg/i.test(howIt)
+      ? 'Size: oversized as described, keeping the real proportions of the garment.'
+      : 'Size: true to size, a regular fit for this model: shoulder seams on the shoulder points, sleeves ending at the wrist bone, real length of the garment. Not oversized.',
     'Plain light grey background, soft even studio light, sharp photo.',
     'Output: one single full-body image.',
   ].join('\n')
