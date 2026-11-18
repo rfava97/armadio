@@ -530,6 +530,8 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
     Float32Array.from(arr, (_, i) => f([...arr.slice(Math.max(0, i - r), Math.min(n, i + r + 1))]))
   const median = win(filled, 4, (v) => v.sort((a, b) => a - b)[v.length >> 1])
   const bottom = win(median, 5, (v) => v.reduce((a, b) => a + b, 0) / v.length)
+  // collo alto: solo il colletto, mai sotto la sua base (dove la felpa si allarga sulle spalle)
+  if (kind === 'collar') for (let i = 0; i < bottom.length; i++) bottom[i] = Math.min(bottom[i], end)
   return { W, H, top, x0, bottom, kind }
 }
 
