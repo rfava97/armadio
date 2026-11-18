@@ -47,8 +47,10 @@ export async function makeSilhouette(bodyUrl: string): Promise<Frame> {
 }
 
 const HOW: Record<string, string> = {
-  aperta: 'open (fully unzipped / unbuttoned), the two front panels hanging loose',
-  aperto: 'open (fully unzipped / unbuttoned), the two front panels hanging loose',
+  aperta:
+    'open (fully unzipped / unbuttoned), the two front panels hanging loose; between the open panels the mannequin MUST stay flat green (no shirt, no skin, no lining in the gap)',
+  aperto:
+    'open (fully unzipped / unbuttoned), the two front panels hanging loose; between the open panels the mannequin MUST stay flat green (no shirt, no skin, no lining in the gap)',
   chiusa: 'closed (fully zipped / buttoned)',
   chiuso: 'closed (fully zipped / buttoned)',
   oversize: 'oversized, loose and boxy, dropped shoulders',
@@ -79,7 +81,7 @@ export function geminiShapePrompt(kind: string, howIt: string, category?: string
       ? 'Size: oversized as described, but keep the real proportions of the garment in image 2.'
       : `Size: TRUE TO SIZE for this body, a regular fit, not oversized and not longer than needed. Shoulder seams exactly on the shoulder points, sleeves ending at the wrist bone with the hands fully visible, ${LENGTH[category ?? ''] ?? 'real length of the garment'}. Keep the real proportions of the garment in image 2.`,
     'The collar sits around the neck, below the chin.',
-    'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, open front, hands, legs) keep the mannequin exactly the same flat green as in image 1. Do not draw a person, skin, face, hands or shadows on the mannequin.',
+    'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, under an opened zip or unbuttoned front, hands, legs) keep the mannequin exactly the same flat green as in image 1: it must be green under the opened zip. Do not draw a person, skin, face, hands, an undershirt or shadows on the mannequin.',
     'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. The inside of the garment (lining, back of the collar) may be visible where it naturally would.',
     'Do not move, resize or crop the mannequin: same canvas size, framing and position as image 1. Plain white background, no shadows.',
     'Output: one single image.',
