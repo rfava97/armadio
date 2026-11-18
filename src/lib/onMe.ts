@@ -428,7 +428,8 @@ export function layerRow(photoY: number, photoAspect: number) {
  * `shoulder`: riga delle spalle nel fotogramma dei livelli.
  */
 const hoods = new Map<string, Promise<HoodShape | null>>()
-type HoodShape = { W: number; H: number; top: number; x0: number; bottom: Float32Array }
+/** hood: cappuccio (appoggiato sul colletto dei capi sopra); collar: collo alto (in piedi attorno al collo, davanti al colletto) */
+type HoodShape = { W: number; H: number; top: number; x0: number; bottom: Float32Array; kind: 'hood' | 'collar' }
 
 async function hoodShape(url: string, shoulder: number): Promise<HoodShape | null> {
   const { mask, rowL, rowR } = await layerExtent(url)
@@ -447,13 +448,15 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
   const limit = Math.min(H, Math.round((shoulder + 0.02) * H))
   let end = top
   while (end < limit && width(end) > 0 && width(end) < ref * 0.6) end++
-  // un cappuccio abbassato sale poco sopra le spalle ma è largo attorno al collo; il bordo di un
-  // girocollo è basso e stretto come il collo
+  // spunta sopra i capi esterni: un collo alto (sale almeno il 3% sopra le spalle, anche stretto) o un
+  // cappuccio abbassato (basso ma largo attorno al collo). Il bordo di un girocollo è basso e stretto.
   if (end - top < 0.025 * H) return null
   const widths: number[] = []
   for (let y = top; y < end; y++) widths.push(width(y))
   widths.sort((a, b) => a - b)
-  if (widths[widths.length >> 1] < 0.15 * W) return null
+  const wide = widths[widths.length >> 1] >= 0.15 * W
+  if (end - top < 0.03 * H && !wide) return null
+  const kind = wide ? 'hood' : 'collar'
 
   // colonne del cappuccio: solo quelle della parte stretta (niente spalle)
   let x0 = W
@@ -527,7 +530,7 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
     Float32Array.from(arr, (_, i) => f([...arr.slice(Math.max(0, i - r), Math.min(n, i + r + 1))]))
   const median = win(filled, 4, (v) => v.sort((a, b) => a - b)[v.length >> 1])
   const bottom = win(median, 5, (v) => v.reduce((a, b) => a + b, 0) / v.length)
-  return { W, H, top, x0, bottom }
+  return { W, H, top, x0, bottom, kind }
 }
 
 /** il cappuccio scende sopra i capi esterni solo di poco: sembra appoggiato sul colletto */
@@ -549,7 +552,7 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
   }
   const shape = await p
   if (!shape) return null
-  const { W, H, top, x0, bottom } = shape
+  const { W, H, top, x0, bottom, kind } = shape
   // bordo alto dei capi sopra, per colonna (alla scala del cappuccio)
   const outerTop = new Float32Array(W).fill(-1)
   for (const e of await Promise.all(above.map(layerExtent))) {
@@ -559,10 +562,11 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       if (t >= 0) outerTop[x] = outerTop[x] < 0 ? t / k : Math.min(outerTop[x], t / k)
     }
   }
+  // il collo alto sta in piedi davanti al colletto dei capi sopra: intero fino alla sua base
   const overlap = HOOD_OVERLAP * H
   const end = Float32Array.from(bottom, (b, i) => {
     const t = outerTop[x0 + i]
-    return t >= 0 ? Math.min(b, t + overlap) : b
+    return t >= 0 && kind === 'hood' ? Math.min(b, t + overlap) : b
   })
   // a piena risoluzione: colonne interpolate, bordo di 2 px
   const S = size / Math.max(W, H)
