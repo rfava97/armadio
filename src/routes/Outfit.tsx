@@ -28,7 +28,8 @@ import {
 } from '@/features/onme/api'
 import { SaveOnMeSheet } from '@/features/onme/SaveOnMeSheet'
 import { AdjustPanel } from '@/features/onme/AdjustPanel'
-import { layerOrigin, NO_ADJUST, type LayerAdjust } from '@/lib/onMe'
+import { useAdjustPreview } from '@/features/onme/useAdjustPreview'
+import { layerGuide, NO_ADJUST, type AdjustGuide, type LayerAdjust } from '@/lib/onMe'
 import {
   addLayer,
   candidates,
@@ -56,6 +57,9 @@ const VIEWS: { key: CamerinoView; label: string }[] = [
   { key: 'sudime', label: 'Su di me' },
 ]
 
+/** riferimenti di ripiego se il livello non si legge */
+const FALLBACK_GUIDE: AdjustGuide = { origin: { x: 0.5, y: 0.3 }, cx: 0.5, torsoL: 0.39, torsoR: 0.61, hipY: 0.5, ankleY: 0.88 }
+
 export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
   const { data: profile } = useProfile()
@@ -72,7 +76,7 @@ export default function Outfit() {
   const [trying, setTrying] = useState(false)
   const [saving, setSaving] = useState(false)
   // correzione a mano del capo attivo "su di me": per modo, con il punto fisso letto dal livello
-  const [adjusting, setAdjusting] = useState<{ wearId: string; origin: { x: number; y: number } | null; value: LayerAdjust } | null>(null)
+  const [adjusting, setAdjusting] = useState<{ wearId: string; guide: AdjustGuide | null; value: LayerAdjust } | null>(null)
   const adjustMut = useAdjustLayer()
   const toast = useToast()
   const location = useLocation()
@@ -145,15 +149,17 @@ export default function Outfit() {
     if (!activeWear || !activeLayerUrl) return
     const id = activeWear.id
     adjustMut.reset()
-    setAdjusting({ wearId: id, origin: null, value: NO_ADJUST })
-    layerOrigin(activeLayerUrl)
-      .catch(() => ({ x: 0.5, y: 0.3 }))
-      .then((origin) => setAdjusting((a) => (a && a.wearId === id ? { ...a, origin } : a)))
+    setAdjusting({ wearId: id, guide: null, value: NO_ADJUST })
+    layerGuide(activeLayerUrl, anchors)
+      .catch(() => FALLBACK_GUIDE)
+      .then((guide) => setAdjusting((a) => (a && a.wearId === id ? { ...a, guide } : a)))
   }
+  const adjustCategory = activeGarment ? onMeCategory(activeGarment.category) : null
+  const adjustCanvas = useAdjustPreview(adjust?.guide ? activeLayerUrl : undefined, adjust?.guide ?? null, adjustCategory, adjust?.value ?? NO_ADJUST)
   const saveAdjust = () => {
-    if (!adjust?.origin || !activeGarment || !activeWear || !activeLayerUrl) return
+    if (!adjust?.guide || !activeGarment || !activeWear || !activeLayerUrl) return
     adjustMut.mutate(
-      { garment: activeGarment, wear: activeWear, url: activeLayerUrl, adjust: adjust.value, origin: adjust.origin },
+      { garment: activeGarment, wear: activeWear, url: activeLayerUrl, adjust: adjust.value, guide: adjust.guide },
       {
         onSuccess: () => {
           setAdjusting(null)
@@ -345,7 +351,7 @@ export default function Outfit() {
                 onMe={onMe}
                 onSelectZone={(zone) => update((s) => (s.active.zone === zone ? s : { ...s, active: { zone, layer: 0 } }))}
                 onStep={(d) => update((s) => setActiveId(s, neighbor(s, garments, d)))}
-                adjust={adjust?.origin ? { ...adjust.value, origin: adjust.origin } : null}
+                adjustCanvas={adjust ? adjustCanvas : null}
               />
             )}
             {zoneCount === 0 && (
@@ -379,11 +385,12 @@ export default function Outfit() {
           {adjust && activeGarment ? (
             <AdjustPanel
               name={activeWear && activeWear.name !== 'Base' ? `${activeGarment.name} (${activeWear.name.toLowerCase()})` : activeGarment.name}
+              category={adjustCategory ?? 'tops'}
               value={adjust.value}
               onChange={(value) => setAdjusting((a) => (a ? { ...a, value } : a))}
               onCancel={() => setAdjusting(null)}
               onSave={saveAdjust}
-              saving={adjustMut.isPending || !adjust.origin}
+              saving={adjustMut.isPending || !adjustCanvas}
               error={adjustMut.error ? friendlyError(adjustMut.error) : null}
             />
           ) : (

@@ -7,7 +7,7 @@ import type { Category, Garment } from '@/lib/garments'
 import type { Anchors } from '@/lib/mannequin'
 import { loadBitmap, drawScaled } from '@/lib/image/canvas'
 import { encodeLayer } from '@/lib/image/encode'
-import { adjustLayer, makeOnMeLayer, type LayerAdjust, type OnMeCategory } from '@/lib/onMe'
+import { adjustLayer, makeOnMeLayer, type AdjustGuide, type LayerAdjust, type OnMeCategory } from '@/lib/onMe'
 import { importGeminiShape } from '@/lib/onMeGemini'
 import { removeBackground } from '@/lib/image/removeBackground'
 import { garmentImageUrl } from '@/lib/tryon'
@@ -322,7 +322,7 @@ export function useImportGeminiShape() {
   })
 }
 
-/** Salva la correzione a mano (grandezza, lunghezza, posizione) del livello di un modo. */
+/** Salva la correzione a mano (parti, grandezza, lunghezza, posizione) del livello di un modo. */
 export function useAdjustLayer() {
   const qc = useQueryClient()
   const { session } = useAuth()
@@ -332,16 +332,17 @@ export function useAdjustLayer() {
       wear,
       url,
       adjust,
-      origin,
+      guide,
     }: {
       garment: Garment
       wear: Wear
       url: string
       adjust: LayerAdjust
-      origin: { x: number; y: number }
+      guide: AdjustGuide
     }) => {
-      if (!session || !wear.on_me_body) throw new Error('Serve una tua foto nel Profilo.')
-      const layer = await adjustLayer(url, adjust, origin)
+      const category = onMeCategory(garment.category)
+      if (!session || !wear.on_me_body || !category) throw new Error('Serve una tua foto nel Profilo.')
+      const layer = await adjustLayer(url, adjust, guide, category)
       await storeLayer(garment, wear, layer, wear.on_me_body, session.user.id)
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['wears'] }),

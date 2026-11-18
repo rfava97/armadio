@@ -1,6 +1,7 @@
 import { ctx2d, makeCanvas } from './image/canvas'
 import { keepMainParts } from './image/components'
 import { callTryOn, flatten } from './tryon'
+import type { Anchors } from './mannequin'
 
 /**
  * "Su di me" (SPEC 2.2): per ogni capo una foto di te che lo indossi, generata una volta sola con il
@@ -228,18 +229,47 @@ export async function composeOnMe(bodyUrl: string, layerUrls: string[]): Promise
 
 /**
  * Correzione a mano di un livello "Su di me" (quando Gemini o il modello lo fanno un po' grande,
- * lungo o spostato): grandezza, lunghezza in più o in meno e spostamento, in frazioni del livello.
- * Il punto fisso è il centro in alto del capo (il colletto, o l'elastico dei pantaloni).
+ * lungo, stretto o dritto). Prima le parti, riga per riga (niente strappi tra una parte e l'altra):
+ * - busto e braccia (capi del busto): il busto si allarga dal centro, ogni braccio dal bordo del busto;
+ * - gambe (pantaloni): ognuna si allarga dal centro e si apre verso l'esterno a partire dal cavallo,
+ *   per seguire le gambe un po' divaricate della foto.
+ * Poi l'insieme: grandezza e lunghezza dal centro in alto del capo (colletto o elastico), spostamento.
+ * Spostamenti e aperture sono frazioni della larghezza/altezza del livello.
  */
-export type LayerAdjust = { scale: number; stretch: number; dx: number; dy: number }
-export const NO_ADJUST: LayerAdjust = { scale: 1, stretch: 1, dx: 0, dy: 0 }
+export type LayerAdjust = {
+  scale: number
+  stretch: number
+  dx: number
+  dy: number
+  torso: number
+  armL: number
+  armR: number
+  legL: number
+  legR: number
+  openL: number
+  openR: number
+}
+export const NO_ADJUST: LayerAdjust = { scale: 1, stretch: 1, dx: 0, dy: 0, torso: 1, armL: 1, armR: 1, legL: 1, legR: 1, openL: 0, openR: 0 }
 
-/** Centro in alto del capo nel livello, in frazioni (punto fisso della correzione). */
-export async function layerOrigin(url: string): Promise<{ x: number; y: number }> {
-  const bmp = await createImageBitmap(await (await fetch(url)).blob())
-  const k = Math.min(1, 300 / Math.max(bmp.width, bmp.height))
-  const c = makeCanvas(Math.max(1, Math.round(bmp.width * k)), Math.max(1, Math.round(bmp.height * k)))
-  ctx2d(c).drawImage(bmp, 0, 0, c.width, c.height)
+/** Riferimenti sul livello, in frazioni: punto fisso, centro del corpo, bordi del busto, fianchi e caviglie. */
+export type AdjustGuide = { origin: { x: number; y: number }; cx: number; torsoL: number; torsoR: number; hipY: number; ankleY: number }
+
+const bitmapOf = async (url: string, maxSide?: number) => {
+  const blob = await (await fetch(url)).blob()
+  if (!maxSide) return createImageBitmap(blob)
+  const full = await createImageBitmap(blob)
+  const k = Math.min(1, maxSide / Math.max(full.width, full.height))
+  if (k === 1) return full
+  const small = await createImageBitmap(full, { resizeWidth: Math.round(full.width * k), resizeHeight: Math.round(full.height * k), resizeQuality: 'high' })
+  full.close()
+  return small
+}
+
+/** Riferimenti per la correzione: dal capo (punto fisso) e dai punti del corpo segnati nel Profilo. */
+export async function layerGuide(url: string, anchors: Anchors | null | undefined): Promise<AdjustGuide> {
+  const bmp = await bitmapOf(url, 300)
+  const c = makeCanvas(bmp.width, bmp.height)
+  ctx2d(c).drawImage(bmp, 0, 0)
   bmp.close()
   const d = ctx2d(c).getImageData(0, 0, c.width, c.height).data
   let top = c.height
@@ -253,23 +283,87 @@ export async function layerOrigin(url: string): Promise<{ x: number; y: number }
       if (x > right) right = x
     }
   }
-  if (right < left) return { x: 0.5, y: 0.3 }
-  return { x: (left + right + 1) / 2 / c.width, y: top / c.height }
+  const origin = right < left ? { x: 0.5, y: 0.3 } : { x: (left + right + 1) / 2 / c.width, y: top / c.height }
+  if (!anchors) return { origin, cx: 0.5, torsoL: 0.39, torsoR: 0.61, hipY: 0.5, ankleY: 0.88 }
+  // dalla foto del corpo al livello, che ha ON_ME_PAD × lato lungo di margine su ogni lato
+  const W = c.width
+  const H = c.height
+  const pad = (ON_ME_PAD * Math.max(W, H)) / (1 + 2 * ON_ME_PAD)
+  const fx = (x: number) => (pad + x * (W - 2 * pad)) / W
+  const fy = (y: number) => (pad + y * (H - 2 * pad)) / H
+  const sl = Math.min(anchors.shoulder_l.x, anchors.shoulder_r.x)
+  const sr = Math.max(anchors.shoulder_l.x, anchors.shoulder_r.x)
+  return {
+    origin,
+    cx: fx((anchors.hips.x + anchors.neck.x) / 2),
+    torsoL: fx(sl),
+    torsoR: fx(sr),
+    hipY: fy(anchors.hips.y),
+    ankleY: fy((anchors.ankle_l.y + anchors.ankle_r.y) / 2),
+  }
 }
 
-/** Il livello ridisegnato con la correzione (stesse dimensioni, stesso fotogramma). */
-export async function adjustLayer(url: string, a: LayerAdjust, origin: { x: number; y: number }): Promise<HTMLCanvasElement> {
-  const bmp = await createImageBitmap(await (await fetch(url)).blob())
-  const W = bmp.width
-  const H = bmp.height
-  const c = makeCanvas(W, H)
-  const ctx = ctx2d(c)
-  const ox = origin.x * W
-  const oy = origin.y * H
+const partsChanged = (a: LayerAdjust) =>
+  a.torso !== 1 || a.armL !== 1 || a.armR !== 1 || a.legL !== 1 || a.legR !== 1 || a.openL !== 0 || a.openR !== 0
+
+/** Disegna in `out` (stesse dimensioni di `src`) il livello corretto. */
+export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide, category: OnMeCategory, out: HTMLCanvasElement) {
+  const W = src.width
+  const H = src.height
+  if (out.width !== W || out.height !== H) {
+    out.width = W
+    out.height = H
+  }
+  let parts: CanvasImageSource = src
+  if (partsChanged(a)) {
+    const tmp = makeCanvas(W, H)
+    const t = ctx2d(tmp)
+    const c = g.cx * W
+    // mezzo pixel di sovrapposizione tra le parti: niente righe trasparenti sulle giunture
+    const strip = (sx: number, sw: number, y: number, dx: number, dw: number) => {
+      if (sw > 0 && dw > 0) t.drawImage(src, sx, y, sw, 1, dx - 0.5, y, dw + 1, 1)
+    }
+    if (category === 'tops') {
+      const tl = g.torsoL * W
+      const tr = g.torsoR * W
+      const nl = c - (c - tl) * a.torso
+      const nr = c + (tr - c) * a.torso
+      for (let y = 0; y < H; y++) {
+        strip(0, tl, y, nl - tl * a.armL, tl * a.armL)
+        strip(tl, tr - tl, y, nl, nr - nl)
+        strip(tr, W - tr, y, nr, (W - tr) * a.armR)
+      }
+    } else {
+      // l'apertura cresce dal cavallo (poco sotto i fianchi) fino alle caviglie, e continua sotto
+      const crotch = g.hipY + (g.ankleY - g.hipY) * 0.15
+      for (let y = 0; y < H; y++) {
+        const k = Math.max(0, (y / H - crotch) / Math.max(0.05, g.ankleY - crotch))
+        strip(0, c, y, c - c * a.legL - a.openL * k * W, c * a.legL)
+        strip(c, W - c, y, c + a.openR * k * W, (W - c) * a.legR)
+      }
+    }
+    parts = tmp
+  }
+  const ctx = ctx2d(out)
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+  ctx.clearRect(0, 0, W, H)
+  const ox = g.origin.x * W
+  const oy = g.origin.y * H
   ctx.translate(ox + a.dx * W, oy + a.dy * H)
   ctx.scale(a.scale, a.scale * a.stretch)
   ctx.translate(-ox, -oy)
-  ctx.drawImage(bmp, 0, 0)
+  ctx.drawImage(parts, 0, 0)
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+}
+
+/** Immagine del livello per l'anteprima della correzione (più piccola, per seguire il dito). */
+export const previewBitmap = (url: string) => bitmapOf(url, 700)
+
+/** Il livello corretto a piena risoluzione, da salvare. */
+export async function adjustLayer(url: string, a: LayerAdjust, g: AdjustGuide, category: OnMeCategory): Promise<HTMLCanvasElement> {
+  const bmp = await bitmapOf(url)
+  const c = makeCanvas(bmp.width, bmp.height)
+  renderAdjusted(bmp, a, g, category, c)
   bmp.close()
   return c
 }
