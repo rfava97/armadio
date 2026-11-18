@@ -4,6 +4,7 @@ import { useGesture } from '@use-gesture/react'
 import type { GarmentWithThumb } from '@/features/garments/api'
 import type { Category } from '@/lib/garments'
 import { ON_ME_PAD } from '@/lib/onMe'
+import { useTopShapes } from '@/lib/image/topShape'
 import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
 
 type Box = { left: number; top: number; width: number; height: number }
@@ -42,10 +43,22 @@ const LENGTH_CM: Partial<Record<Category, number>> = {
   jeans: 104,
 }
 const SHOES_CM = 30
-/** quote verticali sul tavolo (cm dall'alto): inizio pantaloni, inizio scarpe, altezza totale */
-const PANTS_Y = 58
-const SHOES_Y = 157
-const TABLE_H = 176
+/**
+ * Larghezza del petto (capo steso, cm): i capi del busto si scalano su questa, riconosciuta nella
+ * foto, così un cappuccio o le maniche aperte non falsano le proporzioni.
+ */
+const CHEST_CM: Partial<Record<Category, number>> = {
+  canotte: 46,
+  maglie: 52,
+  camicie: 54,
+  felpe_maglioni: 58,
+  giacche_cappotti: 60,
+}
+/** quote verticali sul tavolo (cm dall'alto): spalle, inizio pantaloni, inizio scarpe, altezza totale */
+const SHOULDER_Y = 24 // spazio sopra le spalle per cappucci e colletti alti
+const PANTS_Y = 72
+const SHOES_Y = 171
+const TABLE_H = 192
 /** larghezza da far stare nel palco (una felpa con le maniche aperte) */
 const TABLE_W = 110
 const PEEK = 0.16 // quota di schermo occupata dal capo che si intravede ai lati
@@ -105,7 +118,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
       return { left: av.left, top: av.top + y0 * av.height, width: av.width, height: (y1 - y0) * av.height }
     }
     const cx = size.w / 2
-    if (z === 'busto') return { left: cx - 45 * cm, top: y0cm, width: 90 * cm, height: 72 * cm }
+    if (z === 'busto') return { left: cx - 45 * cm, top: y0cm, width: 90 * cm, height: (SHOULDER_Y + 68) * cm }
     if (z === 'gambe') return { left: cx - 28 * cm, top: y0cm + PANTS_Y * cm, width: 56 * cm, height: 104 * cm }
     return { left: cx - 22 * cm, top: y0cm + SHOES_Y * cm, width: 44 * cm, height: 19 * cm }
   }
@@ -116,7 +129,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
       return f < onMe.split[0] ? 'busto' : f < onMe.split[1] ? 'gambe' : 'piedi'
     }
     const c = (y - y0cm) / cm
-    return c < (PANTS_Y + 72) / 2 ? 'busto' : c < SHOES_Y + 2 ? 'gambe' : 'piedi'
+    return c < (PANTS_Y + SHOULDER_Y + 68) / 2 ? 'busto' : c < SHOES_Y + 2 ? 'gambe' : 'piedi'
   }
 
   // cambiando capo, zona o vista il capo attivo riparte sempre dal centro
@@ -179,6 +192,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
     .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
   const gambe = state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined
   const piedi = state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined
+  const shapes = useTopShapes(busto.map(({ g }) => ({ id: g.id, url: g.thumbUrl })))
 
   if (onMe) {
     // il livello copre la foto allargata del margine usato nella generazione
@@ -202,12 +216,31 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
       items.push({ key: 'piedi', g: piedi, zone: 'piedi', layer: 0, box, z: 15, src: piedi.thumbUrl })
     }
     // strati del busto: i più interni spuntano in alto a sinistra, come capi sovrapposti sul tavolo
+    // strati del busto: tutti allineati alle spalle e al centro del petto, uno dietro l'altro
+    const shoulders = y0cm + SHOULDER_Y * cm
     busto.forEach(({ g, i }, n) => {
       if (!g.thumbUrl) return
-      const depth = busto.length - 1 - n
-      const h = (LENGTH_CM[g.category] ?? 70) * cm
-      const box = full(y0cm + Math.max(0, 3 - depth * 3) * cm, h, -depth * 7 * cm)
-      items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src: g.thumbUrl, fit: 'height' })
+      const shape = shapes[g.id]
+      let box: Box | null = null
+      if (shape) {
+        const width = ((CHEST_CM[g.category] ?? 54) * cm) / (shape.torsoR - shape.torsoL)
+        const height = width / shape.aspect
+        const below = (height * (1 - shape.shoulderY)) / cm // lunghezza dalle spalle, in cm
+        // forma riconosciuta solo se plausibile (da canotta corta a cappotto)
+        if (below > 35 && below < 125) {
+          box = {
+            left: size.w / 2 - ((shape.torsoL + shape.torsoR) / 2) * width,
+            top: shoulders - shape.shoulderY * height,
+            width,
+            height,
+          }
+        }
+      }
+      items.push(
+        box
+          ? { key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src: g.thumbUrl }
+          : { key: `busto-${i}`, g, zone: 'busto', layer: i, box: full(shoulders - 3 * cm, (LENGTH_CM[g.category] ?? 70) * cm), z: 20 + n, src: g.thumbUrl, fit: 'height' },
+      )
     })
   }
 

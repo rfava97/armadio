@@ -63,8 +63,8 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 
 ### 2.3 Viste del camerino
 **A. Tavolo (default)**
-- I capi scelti, stesi come un outfit su un tavolo: busto in alto, pantaloni sotto, scarpe in fondo, con un'ombra morbida. Gli strati interni del busto spuntano dietro quello esterno.
-- I capi sono in proporzione: ogni foto è scalata sulla lunghezza tipica della categoria (maglia ~70 cm, camicia ~78, pantalone ~104, paio di scarpe largo ~30).
+- I capi scelti, stesi come un outfit su un tavolo: busto in alto, pantaloni sotto, scarpe in fondo, con un'ombra morbida. Gli strati interni del busto stanno dietro quello esterno.
+- I capi sono in proporzione. Busto: nella foto viene riconosciuto il petto (colonne alte quasi quanto il capo, anche oltre il varco di una giacca aperta) e le spalle (sotto un eventuale cappuccio); il capo è scalato sulla larghezza tipica del petto (maglia ~52 cm, camicia ~54, felpa ~58, giacca ~60) e tutti gli strati sono allineati alle spalle e al centro del petto, uno dietro l'altro (spuntano orli e maniche, come davvero). Se la forma non si riconosce, si usa la lunghezza tipica. Pantaloni ~104 cm di lunghezza, paio di scarpe largo ~30.
 - Funziona sempre, anche senza foto e senza connessione all'AI.
 
 **B. Su di me**
