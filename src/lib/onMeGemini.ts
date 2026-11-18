@@ -47,42 +47,27 @@ export async function makeSilhouette(bodyUrl: string): Promise<Frame> {
 }
 
 const HOW: Record<string, string> = {
-  aperta: 'open (fully unzipped / unbuttoned), the two front panels hanging loose, the mannequin green between them',
-  aperto: 'open (fully unzipped / unbuttoned), the two front panels hanging loose, the mannequin green between them',
+  aperta: 'open (fully unzipped / unbuttoned), the two front panels hanging loose; it must be green under the opened zip',
+  aperto: 'open (fully unzipped / unbuttoned), the two front panels hanging loose; it must be green under the opened zip',
   chiusa: 'closed (fully zipped / buttoned)',
   chiuso: 'closed (fully zipped / buttoned)',
-  oversize: 'oversized, loose and boxy, dropped shoulders',
-  aderente: 'slim, close-fitting',
-}
-
-/** Dove finisce il capo sul manichino, per categoria. */
-const ENDS: Record<string, string> = {
-  pantaloni: 'the waistband at the mannequin waist and the hem at its ankles',
-  jeans: 'the waistband at the mannequin waist and the hem at its ankles',
-  giacche_cappotti: 'its real length, the cuffs at the mannequin wrists',
 }
 
 /**
- * Prompt per vestire la sagoma verde con il capo. È quello che ha funzionato meglio: parla solo del
- * manichino (parole come "corpo" o "mani" fanno comparire una persona) e chiede di lasciarlo verde
- * dove il capo non copre, anche sotto una zip aperta.
+ * Prompt per vestire la sagoma verde con il capo: è il testo che ha funzionato con Gemini, da non
+ * ritoccare (parole come "corpo" o "taglia" gli fanno disegnare una persona).
  */
-export function geminiShapePrompt(kind: string, howIt: string, category?: string): string {
-  const name = howIt.trim().toLowerCase()
-  const how = HOW[name] ?? (howIt.trim() || 'as it is normally worn')
-  const oversize = /oversize|larg/.test(name)
-  const ends = ENDS[category ?? ''] ?? 'the hem at the mannequin waist and the cuffs at its wrists'
+export function geminiShapePrompt(kind: string, howIt: string): string {
+  const how = HOW[howIt.trim().toLowerCase()] ?? (howIt.trim() || 'as it is normally worn')
   return [
     'Image 1 is a flat green mannequin silhouette seen from the front, on a white background. Image 2 is a garment.',
     `Dress the green mannequin with ONLY this ${kind}, worn like this: ${how}.`,
-    `Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with natural folds and drape. ${
-      oversize ? 'Oversized as described.' : 'Regular fit, not oversized, not longer than needed:'
-    } ${ends}. The collar sits around the neck, below the chin.`,
-    'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, open front, hands, legs) keep the mannequin exactly the same flat green as in image 1. It must be green under an opened zip. Do not draw a person, skin, face, hands or shadows on the mannequin.',
+    'Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with a realistic fit, natural folds and drape (do not make loose or oversized garments tight). The collar sits around the neck, below the chin; the cuffs end at the wrists.',
+    'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, open front, hands, legs) keep the mannequin exactly the same flat green as in image 1. Do not draw a person, skin, face, hands or shadows on the mannequin.',
     'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. The inside of the garment (lining, back of the collar) may be visible where it naturally would.',
     'Do not move, resize or crop the mannequin: same canvas size, framing and position as image 1. Plain white background, no shadows.',
     'Output: one single image.',
-  ].join('\n')
+  ].join('\n\n')
 }
 
 const toFile = (c: HTMLCanvasElement, name: string, type: string) =>
