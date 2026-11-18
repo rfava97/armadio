@@ -8,6 +8,8 @@ import type { Anchors } from '@/lib/mannequin'
 import { loadBitmap, drawScaled } from '@/lib/image/canvas'
 import { encodeLayer } from '@/lib/image/encode'
 import { makeOnMeLayer, type OnMeCategory } from '@/lib/onMe'
+import { importGeminiShape } from '@/lib/onMeGemini'
+import { removeBackground } from '@/lib/image/removeBackground'
 import { garmentImageUrl } from '@/lib/tryon'
 
 const BUCKET = 'renders'
@@ -110,7 +112,22 @@ type Body = { path: string; url: string; anchors?: Anchors | null }
 /** Linea tra busto e gambe sulla foto: poco sopra i fianchi, dove di solito c'è l'elastico. */
 const splitOf = (a?: Anchors | null) => (a ? a.waist.y + (a.hips.y - a.waist.y) * 0.6 : 0.5)
 
-/** Genera e salva il livello "su di me" di un modo (sostituisce quello vecchio). */
+/** Salva un livello "su di me" sul modo e toglie quello vecchio. */
+async function storeLayer(g: Garment, w: Wear, layer: HTMLCanvasElement, bodyPath: string, userId: string) {
+  const blob = await encodeLayer(layer)
+  const path = `${userId}/onme/${g.id}-${w.id}-${Date.now()}.webp`
+  const store = supabase.storage.from(BUCKET)
+  const up = await store.upload(path, blob, { contentType: 'image/webp', upsert: false })
+  if (up.error) throw up.error
+  const { error } = await supabase.from('garment_wears').update({ on_me_path: path, on_me_body: bodyPath }).eq('id', w.id)
+  if (error) {
+    await store.remove([path])
+    throw friendly(error)
+  }
+  if (w.on_me_path) await store.remove([w.on_me_path])
+}
+
+/** Genera e salva il livello "su di me" di un modo con FASHN (sostituisce quello vecchio). */
 async function prepareOne(g: Garment, w: Wear, body: Body, userId: string) {
   const category = onMeCategory(g.category)
   if (!category) throw new Error('Questo capo non si può vedere su di te.')
@@ -122,17 +139,7 @@ async function prepareOne(g: Garment, w: Wear, body: Body, userId: string) {
     !!w.fit_photo_path,
     splitOf(body.anchors),
   )
-  const blob = await encodeLayer(layer)
-  const path = `${userId}/onme/${g.id}-${w.id}-${Date.now()}.webp`
-  const store = supabase.storage.from(BUCKET)
-  const up = await store.upload(path, blob, { contentType: 'image/webp', upsert: false })
-  if (up.error) throw up.error
-  const { error } = await supabase.from('garment_wears').update({ on_me_path: path, on_me_body: body.path }).eq('id', w.id)
-  if (error) {
-    await store.remove([path])
-    throw friendly(error)
-  }
-  if (w.on_me_path) await store.remove([w.on_me_path])
+  await storeLayer(g, w, layer, body.path, userId)
 }
 
 /* ---------- coda: i modi si preparano uno alla volta, anche cambiando schermata ---------- */
@@ -291,4 +298,26 @@ export async function removeWearFiles(garmentId: string) {
   const layers = rows.map((r) => r.on_me_path).filter((p): p is string => !!p)
   if (fits.length) await supabase.storage.from('garments').remove(fits)
   if (layers.length) await supabase.storage.from(BUCKET).remove(layers)
+}
+
+/**
+ * Esperimento: livello "Su di me" da un'immagine di Gemini (il capo disegnato sulla tua sagoma).
+ * Per un capo senza modi crea prima "Base".
+ */
+export function useImportGeminiShape() {
+  const qc = useQueryClient()
+  const { session } = useAuth()
+  const { data: profile } = useProfile()
+  const bodyPath = profile?.body_photo_path ?? null
+  const photo = useBodyPhotoUrl(bodyPath)
+  return useMutation({
+    mutationFn: async ({ garment, wear, file }: { garment: Garment; wear?: Wear; file: Blob }) => {
+      const category = onMeCategory(garment.category)
+      if (!category || !bodyPath || !photo.data || !session) throw new Error('Serve una tua foto nel Profilo.')
+      const layer = await importGeminiShape(file, photo.data, category, splitOf(profile?.body_anchors), (c) => removeBackground(c))
+      const w = wear ?? (await createWear(garment.id, 'Base'))
+      await storeLayer(garment, w, layer, bodyPath, session.user.id)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['wears'] }),
+  })
 }

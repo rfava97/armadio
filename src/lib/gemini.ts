@@ -5,7 +5,7 @@ import type { Garment } from './garments'
  * (gratuita); le foto le allega l'utente.
  */
 
-const KIND: Record<string, string> = {
+export const KIND: Record<string, string> = {
   maglie: 'top',
   camicie: 'shirt',
   canotte: 'tank top',

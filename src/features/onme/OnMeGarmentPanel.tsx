@@ -6,7 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/Spinner'
 import { useSignedImage } from '@/features/garments/api'
 import { useProfile } from '@/features/profile/api'
-import { geminiFitPrompt } from '@/lib/gemini'
+import { geminiFitPrompt, KIND } from '@/lib/gemini'
+import { geminiShapePrompt, makeSilhouette, shareForGeminiShape } from '@/lib/onMeGemini'
+import { garmentImageUrl } from '@/lib/tryon'
+import { useBodyPhotoUrl } from '@/features/profile/api'
 import type { Garment } from '@/lib/garments'
 import {
   isWearReady,
@@ -14,6 +17,7 @@ import {
   targetKey,
   useCreateWear,
   useDeleteWear,
+  useImportGeminiShape,
   useOnMeQueue,
   useOnMeStarter,
   useSetFitPhoto,
@@ -104,6 +108,32 @@ function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
   const input = useRef<HTMLInputElement>(null)
   const [changed, setChanged] = useState(false)
   const [copied, setCopied] = useState(false)
+  const importShape = useImportGeminiShape()
+  const photo = useBodyPhotoUrl(bodyPath)
+  const shapeInput = useRef<HTMLInputElement>(null)
+  const [shapeMsg, setShapeMsg] = useState<string | null>(null)
+  const [sharing, setSharing] = useState(false)
+
+  const shareShape = async () => {
+    if (!photo.data) return
+    setSharing(true)
+    setShapeMsg(null)
+    try {
+      const sil = await makeSilhouette(photo.data)
+      await shareForGeminiShape(
+        sil.canvas,
+        await garmentImageUrl(garment.image_path),
+        geminiShapePrompt(KIND[garment.category] ?? 'garment', name === 'Base' ? '' : name),
+      )
+      setShapeMsg('Prompt copiato. In Gemini allega sagoma e capo, incolla il prompt, salva il risultato e importalo qui.')
+    } catch (e) {
+      if ((e as Error)?.name !== 'AbortError') {
+        setShapeMsg((e as { userFacing?: boolean }).userFacing ? (e as Error).message : 'Non riesco a preparare la sagoma.')
+      }
+    } finally {
+      setSharing(false)
+    }
+  }
 
   const name = wear?.name ?? 'Base'
   const key = targetKey({ garment, wear })
@@ -194,6 +224,49 @@ function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
         }}
       />
       {(setFit.error || del.error) && <p className="text-caption text-danger">{(setFit.error ?? del.error)?.message}</p>}
+
+      {/* alternativa a FASHN (anche a quota finita): Gemini disegna il capo sulla tua sagoma */}
+      {bodyPath && (
+        <details className="rounded-input bg-surface-muted px-3 py-2">
+          <summary className="cursor-pointer text-caption font-semibold">Esperimento: su di te con Gemini</summary>
+          <div className="flex flex-col gap-2 pt-2">
+            <p className="text-caption text-fg-muted">
+              Senza FASHN. A Gemini mandi la tua sagoma (una figura grigia, non la tua foto) e il capo; lui disegna solo il capo
+              indossato, l'app lo allinea e lo usa come "su di te".
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="secondary" size="md" className="h-9 px-2" onClick={shareShape} disabled={sharing || !photo.data}>
+                {sharing ? <Spinner /> : <ExternalLink className="size-4" aria-hidden />}
+                Sagoma
+              </Button>
+              <Button
+                variant="secondary"
+                size="md"
+                className="h-9 px-2"
+                onClick={() => shapeInput.current?.click()}
+                disabled={importShape.isPending || working}
+              >
+                {importShape.isPending ? <Spinner /> : <ImagePlus className="size-4" aria-hidden />}
+                {importShape.isPending ? 'Allineo…' : 'Importa'}
+              </Button>
+            </div>
+            {shapeMsg && <p className="text-caption text-fg-muted">{shapeMsg}</p>}
+            {importShape.error && <p className="text-caption text-danger">{importShape.error.message}</p>}
+            {importShape.isSuccess && !importShape.isPending && <p className="text-caption text-fg">Fatto: guardalo nel camerino, vista Su di me.</p>}
+          </div>
+          <input
+            ref={shapeInput}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) importShape.mutate({ garment, wear, file: f }, { onSuccess: () => setChanged(false) })
+            }}
+          />
+        </details>
+      )}
 
       <div className="flex items-center justify-between gap-3 border-t border-border pt-3">
         <p className="flex min-w-0 items-center gap-2 text-caption" role="status">
