@@ -231,7 +231,7 @@ function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
           <summary className="cursor-pointer text-caption font-semibold">Esperimento: su di te con Gemini</summary>
           <div className="flex flex-col gap-2 pt-2">
             <p className="text-caption text-fg-muted">
-              Senza FASHN. A Gemini mandi la tua sagoma (una figura grigia, non la tua foto) e il capo; lui disegna solo il capo
+              Senza FASHN. A Gemini mandi la tua sagoma (una figura verde, non la tua foto) e il capo; lui disegna solo il capo
               indossato, l'app lo allinea e lo usa come "su di te".
             </p>
             <div className="grid grid-cols-2 gap-2">
