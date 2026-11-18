@@ -207,7 +207,13 @@ export async function makeOnMeLayer(
  * L'immagine "Su di me" come si vede nel camerino: la tua foto e, sopra, i livelli dei capi
  * (pantaloni, poi gli strati del busto dal più interno) su fondo chiaro. Per salvarla nei preferiti.
  */
-export async function composeOnMe(bodyUrl: string, layerUrls: string[], topsFrom = layerUrls.length): Promise<Blob> {
+export async function composeOnMe(
+  bodyUrl: string,
+  layerUrls: string[],
+  topsFrom = layerUrls.length,
+  /** riga delle spalle sulla foto (frazione), per i cappucci degli strati sotto */
+  shoulderY?: number,
+): Promise<Blob> {
   const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
   const body = await load(bodyUrl)
   const w = body.width
@@ -238,6 +244,28 @@ export async function composeOnMe(bodyUrl: string, layerUrls: string[], topsFrom
     }
     l.close()
   }
+  // cappucci degli strati sotto, sopra i capi esterni
+  if (shoulderY !== undefined) {
+    const line = layerRow(shoulderY, w / h)
+    const band = hoodBand(line)
+    for (const u of tops.slice(0, -1)) {
+      if (!(await hasHood(u, line))) continue
+      const l = await load(u)
+      const t = makeCanvas(l.width, l.height)
+      const tctx = ctx2d(t)
+      tctx.drawImage(l, 0, 0)
+      l.close()
+      const g = tctx.createLinearGradient(0, 0, 0, t.height)
+      g.addColorStop(0, '#000')
+      g.addColorStop(band.solid, '#000')
+      g.addColorStop(Math.min(1, band.end), 'rgba(0,0,0,0)')
+      tctx.globalCompositeOperation = 'destination-in'
+      tctx.fillStyle = g
+      tctx.fillRect(0, 0, t.width, t.height)
+      ctx.drawImage(t, -pad, -pad, w + pad * 2, h + pad * 2)
+      releaseCanvas(t)
+    }
+  }
   const blob = await new Promise<Blob>((ok, ko) => c.toBlob((b) => (b ? ok(b) : ko(new Error('Immagine non valida'))), 'image/png'))
   releaseCanvas(c)
   return blob
@@ -250,9 +278,11 @@ export async function composeOnMe(bodyUrl: string, layerUrls: string[], topsFrom
  * collo, orlo che esce sotto) resta tutto. Dentro una giacca aperta si vede.
  * Maschera alfa (opaca = visibile), stesso fotogramma dei livelli.
  */
-const extents = new Map<string, Promise<HTMLCanvasElement>>()
+type Extent = { mask: HTMLCanvasElement; top: number }
+const extents = new Map<string, Promise<Extent>>()
 
-function layerExtent(url: string): Promise<HTMLCanvasElement> {
+/** Maschera per righe del capo e riga più alta (frazione), in cache per URL. */
+function layerExtent(url: string): Promise<Extent> {
   let p = extents.get(url)
   if (!p) {
     p = (async () => {
@@ -267,6 +297,7 @@ function layerExtent(url: string): Promise<HTMLCanvasElement> {
       ctx.clearRect(0, 0, W, H)
       ctx.fillStyle = '#000'
       const m = Math.round(W * 0.01)
+      let top = -1
       for (let y = 0; y < H; y++) {
         let l = -1
         let r = -1
@@ -277,9 +308,12 @@ function layerExtent(url: string): Promise<HTMLCanvasElement> {
           }
         }
         if (l < 0) ctx.fillRect(0, y, W, 1)
-        else ctx.fillRect(l - m, y, r - l + 1 + 2 * m, 1)
+        else {
+          ctx.fillRect(l - m, y, r - l + 1 + 2 * m, 1)
+          if (top < 0) top = y
+        }
       }
-      return c
+      return { mask: c, top: top < 0 ? 1 : top / H }
     })()
     extents.set(url, p)
     // gli URL firmati cambiano: non tengo in memoria quelli vecchi all'infinito
@@ -288,10 +322,31 @@ function layerExtent(url: string): Promise<HTMLCanvasElement> {
   return p
 }
 
+/**
+ * Riga delle spalle nel fotogramma dei livelli (frazione), dalla riga sulla foto del corpo
+ * (frazione) e dalle proporzioni della foto.
+ */
+export function layerRow(photoY: number, photoAspect: number) {
+  const pad = ON_ME_PAD * Math.max(photoAspect, 1)
+  return (pad + photoY) / (1 + 2 * pad)
+}
+
+/**
+ * Cappuccio: uno strato sotto che sale ben sopra le spalle (più del 5% dell'altezza) ha un cappuccio.
+ * La sua parte sopra le spalle va disegnata sopra i capi esterni, come un cappuccio tirato fuori dalla
+ * giacca. `shoulder` è la riga delle spalle nel fotogramma dei livelli.
+ */
+export async function hasHood(url: string, shoulder: number) {
+  return (await layerExtent(url)).top < shoulder - 0.05
+}
+
+/** Fino a dove (frazione dall'alto) il cappuccio va sopra: poco sotto le spalle, con sfumatura. */
+export const hoodBand = (shoulder: number) => ({ solid: shoulder - 0.005, end: shoulder + 0.015 })
+
 /** Dove si vede uno strato che ha sopra questi livelli (null se sopra non c'è niente). */
 export async function coverMask(above: string[]): Promise<HTMLCanvasElement | null> {
   if (!above.length) return null
-  const masks = await Promise.all(above.map(layerExtent))
+  const masks = (await Promise.all(above.map(layerExtent))).map((e) => e.mask)
   const c = makeCanvas(masks[0].width, masks[0].height)
   const ctx = ctx2d(c)
   ctx.drawImage(masks[0], 0, 0)

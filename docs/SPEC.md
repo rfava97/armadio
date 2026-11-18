@@ -47,9 +47,9 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 ### 2.1 Layout
 - Header: "Crea il tuo outfit", a destra pill con lente (cerca capo), scintille ("Provalo su di me", 2.3 C) e mescola.
 - Indicatori strati in alto, solo per la zona busto: `Strato 1: <nome capo>` · `Strato 2: –` con X per rimuovere; lo strato attivo ha sottolineatura accent. Pulsante "+ Strato".
-- Sotto: chip delle zone (Busto, Gambe, Piedi) e, a destra, la scelta della vista **Tavolo | Su di me** (ricordata sul dispositivo).
+- Sotto: chip delle zone (Busto, Gambe, Piedi). La vista è sempre **Su di me**; il **Tavolo** compare solo se nel Profilo manca la tua foto (con il rimando al Profilo).
 - Centro: il palco, in una delle due viste (2.3). Ai lati si intravedono il capo precedente e successivo della zona attiva (peek ~16%).
-- Riga in basso: suggerimento sul tavolo; "su di me" lo stato dei capi (pronto, da preparare, in preparazione) con il pulsante "Prepara".
+- Riga in basso: senza foto, il rimando al Profilo; su di me lo stato dei capi (pronto, da preparare, in preparazione) con il pulsante "Prepara".
 
 ### 2.2 Interazioni
 - **Zone**: `busto` (strati), `gambe`, `piedi`. Tap su una zona del palco la rende attiva (alone leggero).
@@ -62,7 +62,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Pulsante "Mescola" (icona shuffle) → combinazione casuale.
 
 ### 2.3 Viste del camerino
-**A. Tavolo (default)**
+**A. Tavolo (solo senza la tua foto)**
 - I capi scelti, stesi come un outfit su un tavolo: busto in alto, pantaloni sotto, scarpe in fondo, con un'ombra morbida. Gli strati interni del busto stanno dietro quello esterno.
 - I capi sono in proporzione. Busto: nella foto viene riconosciuto il petto (colonne alte quasi quanto il capo, anche oltre il varco di una giacca aperta) e le spalle (sotto un eventuale cappuccio); il capo è scalato sulla larghezza tipica del petto (maglia ~52 cm, camicia ~54, felpa ~58, giacca ~60) e tutti gli strati sono allineati alle spalle e al centro del petto, uno dietro l'altro (spuntano orli e maniche, come davvero). Se la forma non si riconosce, si usa la lunghezza tipica. Pantaloni ~104 cm di lunghezza, paio di scarpe largo ~30.
 - Funziona sempre, anche senza foto e senza connessione all'AI.
@@ -72,7 +72,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Ogni maglia e pantalone viene "fotografato su di te" **una volta sola** con il try-on di Hugging Face (2.3 C): dal confronto tra la foto inviata e quella generata si ritaglia il capo (con le braccia ridisegnate) come livello WebP trasparente, salvato nel bucket privato `renders` (`<user_id>/onme/…`). Sul capo: `on_me_path` e `on_me_body` (la foto del corpo usata; se cambi foto, il capo va rifatto).
 - Nel camerino i livelli si sovrappongono alla foto (pantaloni, poi strati del busto dal più interno): lo swipe resta istantaneo.
 - Capi non ancora pronti: non compaiono, la riga in basso propone "Prepara". Dal Profilo si preparano tutti i capi mancanti in coda (uno alla volta, circa un minuto a capo, una decina al giorno con la quota gratuita).
-- Scarpe e accessori non si vedono su di te: restano quelli della foto.
+- Scarpe e accessori non si vedono su di te: restano quelli della foto. Il capo scelto che non si vede addosso (scarpe, accessori, capo non ancora preparato) compare in un riquadro in basso a destra, che segue lo swipe.
 - **Come lo indossi** (dettaglio capo, tabella `garment_wears`, migrazione 006): ogni maglia o pantalone ha uno o più *modi* (es. felpa "Chiusa" e "Aperta"; per camicie, felpe e giacche sono suggeriti). Ogni modo ha:
   - una **foto indossata** facoltativa, in cui qualcuno porta il capo così: non compare nell'armadio, serve solo al try-on (FASHN `garment_photo_type: model`, che copia vestibilità e chiusura); senza, si usa la foto stesa (`flat-lay`, capo aderente e chiuso). Ridotta a 1200 px, non scontornata, nel bucket `garments`;
   - il pulsante **Gemini**, che copia un prompt per far creare a Gemini la foto indossata (un modello qualunque con la tua altezza che porta il capo in quel modo; solo la foto del capo va a Google) e apre l'app Gemini;
@@ -84,7 +84,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - **Salva da "Su di me"**: nella vista Su di me il cuore nell'header compone l'immagine come si vede (foto + livelli) e la salva nei preferiti con nome e stile, senza generare di nuovo.
 - **Rifai su di me**: dal dettaglio capo o dalla riga sotto il palco, rigenera il capo (sostituisce il livello precedente).
 - **Regola**: dalla riga sotto il palco, corregge a mano il capo attivo, con anteprima sulla foto. Scheda **Insieme**: Grandezza, Lunghezza (±15%, dal centro in alto del capo: colletto o elastico), Su/giù, Sinistra/destra. Scheda **Busto e braccia** (capi del busto): larghezza del busto (dal centro) e di ciascun braccio (dal bordo del busto, i bordi sono le spalle segnate nel Profilo). Scheda **Maniche** (capi del busto): **Inclina** ruota ogni manica attorno alla spalla (−10°…+15°, positivo verso l'esterno) e **Manica** la allunga o accorcia lungo il braccio (spalla → polsino, ±20%) senza ingrossarla; l'effetto cresce piano dalla spalla, così la manica si piega senza strapparsi, e non trascina pezzi di busto. Scheda **Gambe** (pantaloni): larghezza di ciascuna gamba (dal centro) e **Apri**, che inclina la gamba verso l'esterno dal cavallo in giù, per seguire le gambe divaricate della foto. Le parti si deformano riga per riga, senza strappi. **Salva** ridisegna il livello del modo (sostituisce il precedente); **Azzera** e **Annulla** non salvano nulla.
-- **Strati coperti**: ogni capo è generato da solo, quindi uno strato sotto (es. felpa sotto una giacca) spunterebbe ai lati delle maniche e sulle spalle. Su di me, riga per riga, lo strato sotto resta visibile solo tra il punto più a sinistra e quello più a destra dei capi sopra; dove sopra non c'è niente (cappuccio sopra il collo, orlo che esce sotto) resta tutto, e dentro una giacca aperta si vede. Vale anche per l'immagine salvata nei preferiti.
+- **Strati coperti**: ogni capo è generato da solo, quindi uno strato sotto (es. felpa sotto una giacca) spunterebbe ai lati delle maniche e sulle spalle. Su di me, riga per riga, lo strato sotto resta visibile solo tra il punto più a sinistra e quello più a destra dei capi sopra; dove sopra non c'è niente (cappuccio sopra il collo, orlo che esce sotto) resta tutto, e dentro una giacca aperta si vede. Vale anche per l'immagine salvata nei preferiti. **Cappuccio**: uno strato sotto che sale ben sopra le spalle (più del 5% dell'altezza) ha un cappuccio, e la sua parte sopra le spalle (con una breve sfumatura) è disegnata sopra i capi esterni, come un cappuccio tirato fuori dalla giacca.
 
 **C. "Provalo su di me" (AI, gratis con limiti)**
 - Pulsante con le scintille nell'header del camerino: genera una foto realistica dell'outfit sulla foto del corpo.

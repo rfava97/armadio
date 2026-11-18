@@ -3,7 +3,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import { useGesture } from '@use-gesture/react'
 import type { GarmentWithThumb } from '@/features/garments/api'
 import type { Category } from '@/lib/garments'
-import { ON_ME_PAD } from '@/lib/onMe'
+import { hoodBand, layerRow, ON_ME_PAD } from '@/lib/onMe'
 import { useTopShapes } from '@/lib/image/topShape'
 import { useCoverMasks } from './useCoverMasks'
 import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
@@ -18,6 +18,8 @@ export type OnMeSource = {
   split: [number, number]
   /** id del capo → URL del livello */
   layers: Map<string, string>
+  /** riga delle spalle sulla foto (frazione), per i cappucci degli strati sotto */
+  shoulderY?: number
 }
 
 type Props = {
@@ -68,7 +70,20 @@ const PEEK = 0.16 // quota di schermo occupata dal capo che si intravede ai lati
 const SHADOW = 'drop-shadow(0 3px 6px rgba(11, 31, 68, 0.22))'
 
 /** fit "height": la foto è alta quanto il riquadro e centrata (larghezza naturale) */
-type Item = { key: string; g: GarmentWithThumb; zone: StageZone; layer: number; box: Box; z: number; src: string; fit?: 'height'; mask?: string }
+type Item = {
+  key: string
+  g: GarmentWithThumb
+  zone: StageZone
+  layer: number
+  box: Box
+  z: number
+  src: string
+  fit?: 'height'
+  /** mask-image CSS (immagine o gradiente) */
+  mask?: string
+  /** solo da vedere: non si sposta con lo swipe (es. il cappuccio sopra la giacca) */
+  still?: boolean
+}
 
 /**
  * Il palco del camerino. Swipe orizzontale: capo precedente/successivo della zona attiva.
@@ -220,7 +235,8 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
   const shapes = useTopShapes(busto.map(({ g }) => ({ id: g.id, url: g.thumbUrl })))
   // su di me: ogni strato del busto è nascosto dove esce dai capi sopra (es. felpa sotto la giacca)
   const onMeTops = onMe ? busto.map(({ g }) => onMe.layers.get(g.id)).filter((u): u is string => !!u) : []
-  const covers = useCoverMasks(onMeTops)
+  const shoulderLine = onMe?.shoulderY !== undefined ? layerRow(onMe.shoulderY, onMe.aspect) : undefined
+  const covers = useCoverMasks(onMeTops, shoulderLine)
 
   if (onMe) {
     // il livello copre la foto allargata del margine usato nella generazione
@@ -231,7 +247,25 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     if (gambe && gl) items.push({ key: 'gambe', g: gambe, zone: 'gambe', layer: 0, box, z: 10, src: gl })
     busto.forEach(({ g, i }, n) => {
       const src = onMe.layers.get(g.id)
-      if (src) items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src, mask: covers[onMeTops.indexOf(src)] })
+      if (!src) return
+      const k = onMeTops.indexOf(src)
+      const m = covers.masks[k]
+      items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src, mask: m && `url(${m})` })
+      // cappuccio tirato fuori: la parte sopra le spalle, sopra tutti i capi
+      if (covers.hoods[k] && shoulderLine !== undefined) {
+        const b = hoodBand(shoulderLine)
+        items.push({
+          key: `cappuccio-${i}`,
+          g,
+          zone: 'busto',
+          layer: i,
+          box,
+          z: 35,
+          src,
+          still: true,
+          mask: `linear-gradient(to bottom, #000 0%, #000 ${b.solid * 100}%, transparent ${b.end * 100}%)`,
+        })
+      }
     })
   } else {
     const full = (top: number, height: number, shift = 0): Box => ({ left: shift, top, width: size.w, height })
@@ -273,6 +307,10 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
   }
 
   const isActive = (it: Item) => it.zone === activeZone && (activeZone !== 'busto' || it.layer === activeLayer)
+  // su di me: il capo scelto che non si vede addosso (scarpe, accessori, non ancora preparato)
+  const activeGarment = activeId ? byId.get(activeId) : undefined
+  const card = onMe && activeGarment?.thumbUrl && !items.some((it) => !it.still && isActive(it)) ? activeGarment : undefined
+  const cardSide = Math.min(size.w * 0.28, 120)
 
   const picture = (src: string, alt: string, fit?: 'height'): ReactNode => (
     <img
@@ -334,15 +372,15 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
 
           {items.map((it) => {
             const mask = it.mask && {
-              maskImage: `url(${it.mask})`,
-              WebkitMaskImage: `url(${it.mask})`,
+              maskImage: it.mask,
+              WebkitMaskImage: it.mask,
               maskSize: '100% 100%',
               WebkitMaskSize: '100% 100%',
               maskRepeat: 'no-repeat',
               WebkitMaskRepeat: 'no-repeat',
             }
             const style = { ...it.box, zIndex: it.z, filter: onMe ? undefined : SHADOW, ...mask }
-            if (!isActive(it)) {
+            if (it.still || !isActive(it)) {
               return (
                 <div key={it.key} className="pointer-events-none absolute" style={style}>
                   {picture(it.src, it.g.name, it.fit)}
@@ -369,6 +407,26 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
             )
           })}
 
+          {card && (
+            <div
+              className="pointer-events-none absolute z-[45] flex flex-col overflow-hidden rounded-card border border-border bg-garment-bg shadow-sm"
+              style={{ right: 0, bottom: 0, width: cardSide }}
+            >
+              <AnimatePresence initial={false} mode="popLayout">
+                <motion.div
+                  key={card.id}
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  style={{ height: cardSide, x: dragX }}
+                  className="p-2"
+                >
+                  {picture(card.thumbUrl!, card.name)}
+                </motion.div>
+              </AnimatePresence>
+              <p className="truncate bg-surface px-2 py-1 text-caption">{card.name}</p>
+            </div>
+          )}
           {!adjustCanvas && peek(prevId, 'left')}
           {!adjustCanvas && peek(nextId, 'right')}
         </>

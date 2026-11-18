@@ -11,7 +11,7 @@ import { Stage, type OnMeSource } from '@/features/outfit/Stage'
 import { usePreparedBody } from '@/features/outfit/useBodyPhoto'
 import { PickerSheet } from '@/features/outfit/PickerSheet'
 import { TryOnSheet } from '@/features/outfit/TryOnSheet'
-import { setCamerinoSettings, useCamerinoSettings, type CamerinoView } from '@/features/outfit/settings'
+import { useCamerinoSettings, type CamerinoView } from '@/features/outfit/settings'
 import {
   chosenWear,
   isWearReady,
@@ -51,11 +51,6 @@ import {
 } from '@/features/outfit/state'
 
 type NavState = { garmentId?: string } | null
-
-const VIEWS: { key: CamerinoView; label: string }[] = [
-  { key: 'tavolo', label: 'Tavolo' },
-  { key: 'sudime', label: 'Su di me' },
-]
 
 export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()
@@ -99,7 +94,8 @@ export default function Outfit() {
     if (state) saveState(state)
   }, [state])
 
-  const view: CamerinoView = settings.view === 'sudime' && bodyPath ? 'sudime' : 'tavolo'
+  // i capi si vedono sempre su di te; il tavolo (capi stesi) resta solo se manca la tua foto
+  const view: CamerinoView = bodyPath ? 'sudime' : 'tavolo'
 
   const byId = useMemo(() => new Map((garments ?? []).map((g) => [g.id, g])), [garments])
   const activeGarment: GarmentWithThumb | undefined = state ? byId.get(getActiveId(state) ?? '') : undefined
@@ -131,6 +127,7 @@ export default function Outfit() {
           aspect: body.aspect,
           split: anchors ? [(anchors.waist.y + anchors.hips.y) / 2, (anchors.ankle_l.y + anchors.ankle_r.y) / 2 - 0.025] : [0.47, 0.92],
           layers: garmentLayers,
+          shoulderY: anchors ? (anchors.shoulder_l.y + anchors.shoulder_r.y) / 2 : undefined,
         }
       : null
 
@@ -164,14 +161,6 @@ export default function Outfit() {
         },
       },
     )
-  }
-
-  const chooseView = (v: CamerinoView) => {
-    if (v === 'sudime' && !bodyPath) {
-      toast('Aggiungi prima la tua foto nel Profilo')
-      return
-    }
-    setCamerinoSettings({ view: v })
   }
 
   const empty = !isLoading && !error && (garments?.length ?? 0) === 0
@@ -315,24 +304,6 @@ export default function Outfit() {
                 )
               })}
             </div>
-            {/* tavolo (capi stesi) o su di me (i capi sulla tua foto) */}
-            <div className="flex shrink-0 rounded-full bg-surface-muted p-0.5" role="radiogroup" aria-label="Vista">
-              {VIEWS.map((v) => (
-                <button
-                  key={v.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={view === v.key}
-                  onClick={() => chooseView(v.key)}
-                  className={cn(
-                    'h-7 rounded-full px-2.5 text-caption font-semibold transition-colors',
-                    view === v.key ? 'bg-accent text-on-accent' : 'text-fg',
-                  )}
-                >
-                  {v.label}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* il palco */}
@@ -418,6 +389,7 @@ export default function Outfit() {
                   .map((x) => garmentLayers.get(x.g.id)!),
               ]}
               topsFrom={state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0}
+              shoulderY={onMe.shoulderY}
               state={state}
             />
           )}
@@ -485,7 +457,10 @@ function OnMeStatus({
   if (view === 'tavolo') {
     return (
       <div className={line}>
-        <p className="text-caption text-fg-muted">Scorri per cambiare capo, tocca una zona per sceglierla.</p>
+        <p className="text-caption text-fg-muted">Aggiungi la tua foto nel Profilo per vedere i capi su di te.</p>
+        <Link to="/profilo" className="shrink-0 text-caption font-semibold text-accent">
+          Profilo
+        </Link>
       </div>
     )
   }
@@ -494,9 +469,9 @@ function OnMeStatus({
   let text: string
   let action: { label: string; items: OnMeTarget[] } | null = null
   if (zone === 'piedi') {
-    text = 'Le scarpe si vedono solo sul tavolo: su di te restano quelle della foto.'
+    text = 'Su di te restano le scarpe della foto: quelle scelte sono nel riquadro.'
   } else if (active && !onMeCategory(active.category)) {
-    text = 'Questo capo si vede solo sul tavolo.'
+    text = 'Questo capo non si vede su di te: è nel riquadro.'
   } else if (active && !isWearReady(activeWear, bodyPath)) {
     const t = { garment: active, wear: activeWear }
     text = busy(t)
