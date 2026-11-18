@@ -3,7 +3,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import { useGesture } from '@use-gesture/react'
 import type { GarmentWithThumb } from '@/features/garments/api'
 import type { Category } from '@/lib/garments'
-import { hoodBand, layerRow, ON_ME_PAD } from '@/lib/onMe'
+import { layerRow, ON_ME_PAD } from '@/lib/onMe'
 import { useTopShapes } from '@/lib/image/topShape'
 import { useCoverMasks } from './useCoverMasks'
 import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
@@ -254,20 +254,10 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
       const k = onMeTops.indexOf(src)
       const m = covers.masks[k]
       items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src, mask: m && `url(${m})` })
-      // cappuccio tirato fuori: la parte sopra le spalle, sopra tutti i capi
-      if (covers.hoods[k] && shoulderLine !== undefined) {
-        const b = hoodBand(shoulderLine)
-        items.push({
-          key: `cappuccio-${i}`,
-          g,
-          zone: 'busto',
-          layer: i,
-          box,
-          z: 35,
-          src,
-          still: true,
-          mask: `linear-gradient(to bottom, #000 0%, #000 ${b.solid * 100}%, transparent ${b.end * 100}%)`,
-        })
+      // cappuccio tirato fuori: solo la sua forma, sopra tutti i capi
+      const hood = covers.hoods[k]
+      if (hood) {
+        items.push({ key: `cappuccio-${i}`, g, zone: 'busto', layer: i, box, z: 35, src, still: true, mask: `url(${hood})` })
       }
     })
   } else {
