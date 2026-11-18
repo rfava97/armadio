@@ -325,6 +325,26 @@ function layerExtent(url: string): Promise<Extent> {
       // centro del corpo: la mediana dei centri delle righe
       const mids = runs.filter((l) => l.length).map((l) => (l[0][0] + l[l.length - 1][1]) / 2).sort((p, q) => p - q)
       const cx = mids.length ? mids[mids.length >> 1] : W / 2
+      // e per colonne: dove c'è il capo, sotto non si vede niente sopra il suo bordo più alto (le
+      // spalle oblique di una giacca lasciano dei vuoti nelle righe, ma non nelle colonne)
+      const colTop = new Float32Array(W).fill(-1)
+      // orlo per colonne (più basso pixel pieno): per gli strati tenuti "dentro"
+      const colBottom = new Float32Array(W).fill(-1)
+      for (let x = 0; x < W; x++) {
+        for (let y = H - 1; y >= 0; y--) {
+          if (d[(y * W + x) * 4 + 3] > 100) {
+            colBottom[x] = y
+            break
+          }
+        }
+        for (let y = 0; y < H; y++) {
+          // anche il bordo sfumato del capo conta: sotto non deve trasparire
+          if (d[(y * W + x) * 4 + 3] > 20) {
+            colTop[x] = y
+            break
+          }
+        }
+      }
       // Dove si vede lo strato sotto, riga per riga:
       // - righe senza il capo (o solo pezzi stretti): tutta la riga (l'orlo che esce sotto);
       // - sotto il capo (rientrando di 2 px: sul bordo non deve trasparire);
@@ -348,27 +368,14 @@ function layerExtent(url: string): Promise<Extent> {
         const right = list.find(([a0]) => a0 > cx)
         const g0 = left ? left[1] + 1 - e : 0
         const g1 = right ? right[0] - 1 + e : W - 1
-        ctx.fillRect(g0, y, g1 - g0 + 1, 1)
-        if (left && right) gctx.fillRect(g0, y, g1 - g0 + 1, 1)
-      }
-      // e per colonne: dove c'è il capo, sotto non si vede niente sopra il suo bordo più alto (le
-      // spalle oblique di una giacca lasciano dei vuoti nelle righe, ma non nelle colonne)
-      const colTop = new Float32Array(W).fill(-1)
-      // orlo per colonne (più basso pixel pieno): per gli strati tenuti "dentro"
-      const colBottom = new Float32Array(W).fill(-1)
-      for (let x = 0; x < W; x++) {
-        for (let y = H - 1; y >= 0; y--) {
-          if (d[(y * W + x) * 4 + 3] > 100) {
-            colBottom[x] = y
-            break
-          }
-        }
-        for (let y = 0; y < H; y++) {
-          // anche il bordo sfumato del capo conta: sotto non deve trasparire
-          if (d[(y * W + x) * 4 + 3] > 20) {
-            colTop[x] = y
-            break
-          }
+        // solo dove il vuoto è aperto verso l'alto o verso il basso (zip aperta fino al collo, giacca
+        // aperta fino all'orlo): un buco chiuso sopra e sotto dal capo (es. tra il colletto e la
+        // spalla) non è un'apertura e lì sotto non si vede niente
+        for (let x = Math.max(0, g0); x <= Math.min(W - 1, g1); x++) {
+          const under = (left && x <= left[1]) || (right && x >= right[0])
+          if (!under && colTop[x] >= 0 && colTop[x] < y && colBottom[x] > y) continue
+          ctx.fillRect(x, y, 1, 1)
+          if (left && right) gctx.fillRect(x, y, 1, 1)
         }
       }
       // bordo ammorbidito (un pixel isolato non alza tutta la colonna)
@@ -567,12 +574,24 @@ export async function coverMask(above: string[], inside = false): Promise<HTMLCa
       const k = e.colBottom.length / W
       for (let x = 0; x < W; x++) bottom[x] = Math.max(bottom[x], e.colBottom[Math.min(e.colBottom.length - 1, Math.floor(x * k))] / k)
     }
+    // giacca aperta: nelle colonne dell'apertura l'orlo non c'è (o c'è solo la punta del colletto):
+    // si prende quello dei due lembi accanto, il più basso entro il 12% della larghezza per lato
+    const R = Math.round(W * 0.12)
+    const filled = Float32Array.from(bottom, (v, x) => {
+      let lf = -1
+      let rt = -1
+      for (let j = Math.max(0, x - R); j < x; j++) lf = Math.max(lf, bottom[j])
+      for (let j = x + 1; j <= Math.min(W - 1, x + R); j++) rt = Math.max(rt, bottom[j])
+      // solo tra due lembi (o sotto il capo): oltre il bordo del capo resta com'è
+      if (v < 0 && (lf < 0 || rt < 0)) return -1
+      return Math.max(v, Math.min(lf, rt))
+    })
     // un orlo più basso solo in poche colonne (un gancio) non conta: mediana larga
     const r = Math.max(3, Math.round(W * 0.03))
-    const hem = Float32Array.from(bottom, (v, x) => {
+    const hem = Float32Array.from(filled, (v, x) => {
       if (v < 0) return -1
       const near: number[] = []
-      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (bottom[j] >= 0) near.push(bottom[j])
+      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (filled[j] >= 0) near.push(filled[j])
       near.sort((a, b) => a - b)
       return near[near.length >> 1]
     })
