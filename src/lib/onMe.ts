@@ -251,7 +251,7 @@ export async function composeOnMe(
   if (shoulderY !== undefined) {
     const line = layerRow(shoulderY, w / h)
     for (const u of tops.slice(0, -1)) {
-      const hood = await hoodMask(u, line)
+      const hood = await hoodMask(u, line, tops.slice(tops.indexOf(u) + 1))
       if (!hood) continue
       const l = await load(u)
       const t = makeCanvas(l.width, l.height)
@@ -278,7 +278,7 @@ export async function composeOnMe(
  * Maschera alfa (opaca = visibile), stesso fotogramma dei livelli.
  */
 /** maschera per righe, riga più alta (frazione), e per ogni riga il primo e l'ultimo pixel del capo (-1 se vuota) */
-type Extent = { mask: HTMLCanvasElement; top: number; rowL: Int16Array; rowR: Int16Array; colBottom: Float32Array }
+type Extent = { mask: HTMLCanvasElement; top: number; rowL: Int16Array; rowR: Int16Array; colTop: Float32Array; colBottom: Float32Array }
 const extents = new Map<string, Promise<Extent>>()
 
 /** Maschera per righe del capo e riga più alta (frazione), in cache per URL. */
@@ -400,7 +400,7 @@ function layerExtent(url: string): Promise<Extent> {
       ctx.drawImage(gaps, 0, 0)
       releaseCanvas(cols)
       releaseCanvas(gaps)
-      return { mask: c, top: top < 0 ? 1 : top / H, rowL, rowR, colBottom }
+      return { mask: c, top: top < 0 ? 1 : top / H, rowL, rowR, colTop, colBottom }
     })()
     extents.set(url, p)
     // gli URL firmati cambiano: non tengo in memoria quelli vecchi all'infinito
@@ -447,7 +447,13 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
   const limit = Math.min(H, Math.round((shoulder + 0.02) * H))
   let end = top
   while (end < limit && width(end) > 0 && width(end) < ref * 0.6) end++
-  if (end - top < 0.04 * H) return null
+  // un cappuccio abbassato sale poco sopra le spalle ma è largo attorno al collo; il bordo di un
+  // girocollo è basso e stretto come il collo
+  if (end - top < 0.025 * H) return null
+  const widths: number[] = []
+  for (let y = top; y < end; y++) widths.push(width(y))
+  widths.sort((a, b) => a - b)
+  if (widths[widths.length >> 1] < 0.15 * W) return null
 
   // colonne del cappuccio: solo quelle della parte stretta (niente spalle)
   let x0 = W
@@ -524,7 +530,16 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
   return { W, H, top, x0, bottom }
 }
 
-export async function hoodMask(url: string, shoulder: number): Promise<HTMLCanvasElement | null> {
+/** il cappuccio scende sopra i capi esterni solo di poco: sembra appoggiato sul colletto */
+const HOOD_OVERLAP = 0.012
+
+/**
+ * Forma del cappuccio da disegnare sopra i capi `above`, a piena risoluzione (`size`: lato lungo del
+ * livello) con un bordo morbido di 2 px. In basso finisce al bordo vero del cappuccio, ma al massimo
+ * poco sotto il bordo alto dei capi sopra (il colletto, la pelliccia): così segue il loro profilo
+ * invece di tagliarli con una riga.
+ */
+export async function hoodMask(url: string, shoulder: number, above: string[] = [], size = 1200): Promise<HTMLCanvasElement | null> {
   const key = `${url}|${shoulder.toFixed(4)}`
   let p = hoods.get(key)
   if (!p) {
@@ -535,19 +550,41 @@ export async function hoodMask(url: string, shoulder: number): Promise<HTMLCanva
   const shape = await p
   if (!shape) return null
   const { W, H, top, x0, bottom } = shape
-  const c = makeCanvas(W, H)
+  // bordo alto dei capi sopra, per colonna (alla scala del cappuccio)
+  const outerTop = new Float32Array(W).fill(-1)
+  for (const e of await Promise.all(above.map(layerExtent))) {
+    const k = e.colTop.length / W
+    for (let x = 0; x < W; x++) {
+      const t = e.colTop[Math.min(e.colTop.length - 1, Math.floor(x * k))]
+      if (t >= 0) outerTop[x] = outerTop[x] < 0 ? t / k : Math.min(outerTop[x], t / k)
+    }
+  }
+  const overlap = HOOD_OVERLAP * H
+  const end = Float32Array.from(bottom, (b, i) => {
+    const t = outerTop[x0 + i]
+    return t >= 0 ? Math.min(b, t + overlap) : b
+  })
+  // a piena risoluzione: colonne interpolate, bordo di 2 px
+  const S = size / Math.max(W, H)
+  const c = makeCanvas(W * S, H * S)
   const ctx = ctx2d(c)
   ctx.fillStyle = '#000'
-  const fade = Math.max(2, Math.round(0.006 * H))
-  for (let i = 0; i < bottom.length; i++) {
-    const b = bottom[i]
+  const at = (X: number) => {
+    const f = Math.min(end.length - 1, Math.max(0, X / S - x0))
+    const i = Math.floor(f)
+    const j = Math.min(end.length - 1, i + 1)
+    return (end[i] + (end[j] - end[i]) * (f - i)) * S
+  }
+  const y0 = top * S
+  for (let X = Math.floor(x0 * S); X < Math.ceil((x0 + end.length) * S); X++) {
+    const b = at(X)
+    if (b <= y0) continue
     ctx.globalAlpha = 1
-    ctx.fillRect(x0 + i, top, 1, Math.max(0, b - fade - top))
-    // sfumatura di pochi pixel sul bordo
-    for (let y = Math.max(top, Math.floor(b - fade)); y < b; y++) {
-      ctx.globalAlpha = Math.min(1, (b - y) / fade)
-      ctx.fillRect(x0 + i, y, 1, 1)
-    }
+    ctx.fillRect(X, y0, 1, Math.max(0, b - 2 - y0))
+    ctx.globalAlpha = 0.66
+    ctx.fillRect(X, b - 2, 1, 1)
+    ctx.globalAlpha = 0.33
+    ctx.fillRect(X, b - 1, 1, 1)
   }
   return c
 }

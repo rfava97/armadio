@@ -35,7 +35,7 @@ export function useCoverMasks(urls: string[], shoulder: number | undefined, insi
       Promise.all(
         list.map(async (u, i) => {
           if (top === undefined || i === list.length - 1) return undefined
-          const c = await hoodMask(u, top)
+          const c = await hoodMask(u, top, list.slice(i + 1))
           if (!c) return undefined
           const url = c.toDataURL('image/png')
           releaseCanvas(c)
