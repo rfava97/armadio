@@ -3,7 +3,7 @@ import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } fr
 import { useGesture } from '@use-gesture/react'
 import type { GarmentWithThumb } from '@/features/garments/api'
 import type { Category } from '@/lib/garments'
-import { ON_ME_PAD } from '@/lib/onMe'
+import { ON_ME_PAD, type LayerAdjust } from '@/lib/onMe'
 import { useTopShapes } from '@/lib/image/topShape'
 import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
 
@@ -26,6 +26,8 @@ type Props = {
   onMe: OnMeSource | null
   onSelectZone: (zone: StageZone) => void
   onStep: (dir: 1 | -1) => void
+  /** "Su di me": correzione in anteprima del capo attivo (punto fisso in frazioni del livello) */
+  adjust?: (LayerAdjust & { origin: { x: number; y: number } }) | null
 }
 
 /**
@@ -71,7 +73,7 @@ type Item = { key: string; g: GarmentWithThumb; zone: StageZone; layer: number; 
  * Il palco del camerino. Swipe orizzontale: capo precedente/successivo della zona attiva.
  * Tocco: sceglie la zona. Sul tavolo i capi sono le loro foto; "su di me" sono i livelli generati.
  */
-export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
+export function Stage({ garments, state, onMe, onSelectZone, onStep, adjust }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const dragX = useMotionValue(0)
@@ -171,7 +173,8 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
         }
       },
     },
-    { drag: { filterTaps: true, axis: 'x' } },
+    // mentre correggi un capo niente swipe: resta fermo quello che stai regolando
+    { drag: { filterTaps: true, axis: 'x' }, enabled: !adjust },
   )
 
   // sulla foto i capi cambiano in dissolvenza; sul tavolo scorrono di lato
@@ -326,15 +329,27 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep }: Props) {
                     transition={{ type: 'spring', stiffness: 300, damping: 30 }}
                     className="h-full w-full"
                   >
-                    {picture(it.src, it.g.name, it.fit)}
+                    {onMe && adjust ? (
+                      <div
+                        className="h-full w-full"
+                        style={{
+                          transformOrigin: `${adjust.origin.x * 100}% ${adjust.origin.y * 100}%`,
+                          transform: `translate(${adjust.dx * 100}%, ${adjust.dy * 100}%) scale(${adjust.scale}, ${adjust.scale * adjust.stretch})`,
+                        }}
+                      >
+                        {picture(it.src, it.g.name, it.fit)}
+                      </div>
+                    ) : (
+                      picture(it.src, it.g.name, it.fit)
+                    )}
                   </motion.div>
                 </AnimatePresence>
               </motion.div>
             )
           })}
 
-          {peek(prevId, 'left')}
-          {peek(nextId, 'right')}
+          {!adjust && peek(prevId, 'left')}
+          {!adjust && peek(nextId, 'right')}
         </>
       )}
     </div>

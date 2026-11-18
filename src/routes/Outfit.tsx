@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Heart, Plus, RotateCcw, Search, Shuffle, Sparkles, X } from 'lucide-react'
+import { Heart, Plus, RotateCcw, Search, Shuffle, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
@@ -16,7 +16,9 @@ import {
   chosenWear,
   isWearReady,
   onMeCategory,
+  friendlyError,
   targetKey,
+  useAdjustLayer,
   useOnMeLayers,
   useOnMeQueue,
   useOnMeStarter,
@@ -25,6 +27,8 @@ import {
   type Wear,
 } from '@/features/onme/api'
 import { SaveOnMeSheet } from '@/features/onme/SaveOnMeSheet'
+import { AdjustPanel } from '@/features/onme/AdjustPanel'
+import { layerOrigin, NO_ADJUST, type LayerAdjust } from '@/lib/onMe'
 import {
   addLayer,
   candidates,
@@ -67,6 +71,9 @@ export default function Outfit() {
   const [picking, setPicking] = useState(false)
   const [trying, setTrying] = useState(false)
   const [saving, setSaving] = useState(false)
+  // correzione a mano del capo attivo "su di me": per modo, con il punto fisso letto dal livello
+  const [adjusting, setAdjusting] = useState<{ wearId: string; origin: { x: number; y: number } | null; value: LayerAdjust } | null>(null)
+  const adjustMut = useAdjustLayer()
   const toast = useToast()
   const location = useLocation()
   const navigate = useNavigate()
@@ -130,6 +137,31 @@ export default function Outfit() {
   const prepare = (items: OnMeTarget[]) => starter.start?.(items)
   const activeWears = activeGarment ? (wearsMap?.get(activeGarment.id) ?? []) : []
   const activeWear = activeGarment ? wearOf(activeGarment) : undefined
+
+  const activeLayerUrl = activeWear && isWearReady(activeWear, bodyPath) ? layers.data?.get(activeWear.id) : undefined
+  // la correzione vale solo finché resta attivo lo stesso modo (cambiando capo o vista si chiude)
+  const adjust = view === 'sudime' && adjusting && adjusting.wearId === activeWear?.id && activeLayerUrl ? adjusting : null
+  const startAdjust = () => {
+    if (!activeWear || !activeLayerUrl) return
+    const id = activeWear.id
+    adjustMut.reset()
+    setAdjusting({ wearId: id, origin: null, value: NO_ADJUST })
+    layerOrigin(activeLayerUrl)
+      .catch(() => ({ x: 0.5, y: 0.3 }))
+      .then((origin) => setAdjusting((a) => (a && a.wearId === id ? { ...a, origin } : a)))
+  }
+  const saveAdjust = () => {
+    if (!adjust?.origin || !activeGarment || !activeWear || !activeLayerUrl) return
+    adjustMut.mutate(
+      { garment: activeGarment, wear: activeWear, url: activeLayerUrl, adjust: adjust.value, origin: adjust.origin },
+      {
+        onSuccess: () => {
+          setAdjusting(null)
+          toast('Capo corretto')
+        },
+      },
+    )
+  }
 
   const chooseView = (v: CamerinoView) => {
     if (v === 'sudime' && !bodyPath) {
@@ -313,6 +345,7 @@ export default function Outfit() {
                 onMe={onMe}
                 onSelectZone={(zone) => update((s) => (s.active.zone === zone ? s : { ...s, active: { zone, layer: 0 } }))}
                 onStep={(d) => update((s) => setActiveId(s, neighbor(s, garments, d)))}
+                adjust={adjust?.origin ? { ...adjust.value, origin: adjust.origin } : null}
               />
             )}
             {zoneCount === 0 && (
@@ -343,16 +376,29 @@ export default function Outfit() {
             </div>
           )}
 
-          <OnMeStatus
-            view={view}
-            active={activeGarment}
-            activeWear={activeWear}
-            zone={state.active.zone}
-            missing={missing}
-            bodyPath={bodyPath}
-            queue={queue}
-            onPrepare={prepare}
-          />
+          {adjust && activeGarment ? (
+            <AdjustPanel
+              name={activeWear && activeWear.name !== 'Base' ? `${activeGarment.name} (${activeWear.name.toLowerCase()})` : activeGarment.name}
+              value={adjust.value}
+              onChange={(value) => setAdjusting((a) => (a ? { ...a, value } : a))}
+              onCancel={() => setAdjusting(null)}
+              onSave={saveAdjust}
+              saving={adjustMut.isPending || !adjust.origin}
+              error={adjustMut.error ? friendlyError(adjustMut.error) : null}
+            />
+          ) : (
+            <OnMeStatus
+              view={view}
+              active={activeGarment}
+              activeWear={activeWear}
+              zone={state.active.zone}
+              missing={missing}
+              bodyPath={bodyPath}
+              queue={queue}
+              onPrepare={prepare}
+              onAdjust={activeLayerUrl ? startAdjust : undefined}
+            />
+          )}
 
           {saving && onMe && (
             <SaveOnMeSheet
@@ -417,6 +463,7 @@ function OnMeStatus({
   bodyPath,
   queue,
   onPrepare,
+  onAdjust,
 }: {
   view: CamerinoView
   active: GarmentWithThumb | undefined
@@ -426,6 +473,8 @@ function OnMeStatus({
   bodyPath: string | null
   queue: ReturnType<typeof useOnMeQueue>
   onPrepare: (items: OnMeTarget[]) => void
+  /** correzione a mano del capo attivo, se è pronto */
+  onAdjust?: () => void
 }) {
   const line = 'mt-2 flex min-h-11 items-center justify-between gap-3'
   if (view === 'tavolo') {
@@ -470,6 +519,12 @@ function OnMeStatus({
         {queue.running && !queue.error && <Spinner className="size-4 shrink-0 text-accent" />}
         {text}
       </p>
+      {action?.label === 'Rifai' && onAdjust && (
+        <Button size="md" variant="secondary" className="h-9 shrink-0 px-3" onClick={onAdjust}>
+          <SlidersHorizontal className="size-4" aria-hidden />
+          Regola
+        </Button>
+      )}
       {action && (
         <Button
           size="md"

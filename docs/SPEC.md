@@ -83,6 +83,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 - Nel camerino, se il capo attivo ha più modi, sotto il palco compaiono i chip per sceglierlo (es. Chiusa | Aperta); la scelta vale per "Su di me" e "Provalo su di me" e viene salvata con l'outfit (`outfit_items.wear_id`).
 - **Salva da "Su di me"**: nella vista Su di me il cuore nell'header compone l'immagine come si vede (foto + livelli) e la salva nei preferiti con nome e stile, senza generare di nuovo.
 - **Rifai su di me**: dal dettaglio capo o dalla riga sotto il palco, rigenera il capo (sostituisce il livello precedente).
+- **Regola**: dalla riga sotto il palco, corregge a mano il capo attivo quando è un po' grande, lungo o spostato: cursori Grandezza, Lunghezza (±15%), Su/giù, Sinistra/destra, con anteprima sulla foto. Il punto fisso è il centro in alto del capo (colletto o elastico). **Salva** ridisegna il livello del modo (sostituisce il precedente), **Azzera** e **Annulla** non salvano nulla.
 
 **C. "Provalo su di me" (AI, gratis con limiti)**
 - Pulsante con le scintille nell'header del camerino: genera una foto realistica dell'outfit sulla foto del corpo.

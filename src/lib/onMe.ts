@@ -225,3 +225,51 @@ export async function composeOnMe(bodyUrl: string, layerUrls: string[]): Promise
   }
   return new Promise((ok, ko) => c.toBlob((b) => (b ? ok(b) : ko(new Error('Immagine non valida'))), 'image/png'))
 }
+
+/**
+ * Correzione a mano di un livello "Su di me" (quando Gemini o il modello lo fanno un po' grande,
+ * lungo o spostato): grandezza, lunghezza in più o in meno e spostamento, in frazioni del livello.
+ * Il punto fisso è il centro in alto del capo (il colletto, o l'elastico dei pantaloni).
+ */
+export type LayerAdjust = { scale: number; stretch: number; dx: number; dy: number }
+export const NO_ADJUST: LayerAdjust = { scale: 1, stretch: 1, dx: 0, dy: 0 }
+
+/** Centro in alto del capo nel livello, in frazioni (punto fisso della correzione). */
+export async function layerOrigin(url: string): Promise<{ x: number; y: number }> {
+  const bmp = await createImageBitmap(await (await fetch(url)).blob())
+  const k = Math.min(1, 300 / Math.max(bmp.width, bmp.height))
+  const c = makeCanvas(Math.max(1, Math.round(bmp.width * k)), Math.max(1, Math.round(bmp.height * k)))
+  ctx2d(c).drawImage(bmp, 0, 0, c.width, c.height)
+  bmp.close()
+  const d = ctx2d(c).getImageData(0, 0, c.width, c.height).data
+  let top = c.height
+  let left = c.width
+  let right = 0
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      if (d[(y * c.width + x) * 4 + 3] < 100) continue
+      if (y < top) top = y
+      if (x < left) left = x
+      if (x > right) right = x
+    }
+  }
+  if (right < left) return { x: 0.5, y: 0.3 }
+  return { x: (left + right + 1) / 2 / c.width, y: top / c.height }
+}
+
+/** Il livello ridisegnato con la correzione (stesse dimensioni, stesso fotogramma). */
+export async function adjustLayer(url: string, a: LayerAdjust, origin: { x: number; y: number }): Promise<HTMLCanvasElement> {
+  const bmp = await createImageBitmap(await (await fetch(url)).blob())
+  const W = bmp.width
+  const H = bmp.height
+  const c = makeCanvas(W, H)
+  const ctx = ctx2d(c)
+  const ox = origin.x * W
+  const oy = origin.y * H
+  ctx.translate(ox + a.dx * W, oy + a.dy * H)
+  ctx.scale(a.scale, a.scale * a.stretch)
+  ctx.translate(-ox, -oy)
+  ctx.drawImage(bmp, 0, 0)
+  bmp.close()
+  return c
+}
