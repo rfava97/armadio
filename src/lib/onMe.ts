@@ -546,61 +546,59 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
 }
 
 /**
- * Collo alto: il colletto, con le punte del bavero quando è aperto. Il colletto è separato dal resto
- * della felpa da un bordo netto (un bordino, una cucitura a contrasto) che dal collo scende verso la
- * spalla: per colonna, un po' più in largo del collo, si tiene tutto quello che sta sopra il bordo
- * netto più basso vicino alla base del colletto. Dove un bordo netto non c'è il colletto finisce alla
- * sua base (nelle colonne del collo) o non c'è (più in là: lì è la spalla).
+ * Collo alto: il colletto, con le punte del bavero quando è aperto. Nelle colonne del collo arriva
+ * alla sua base. Un po' più in largo, le punte si riconoscono dal bordino a contrasto (chiaro e poco
+ * colorato) che le contorna: si tiene fino al bordino più basso vicino alla cima della colonna. Senza
+ * bordino (una spalla, o un capo senza bordino) lì il colletto non c'è.
  */
 function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0: number, x1: number, base: number): HoodShape {
   const g = Math.round(0.07 * W)
   const c0 = Math.max(0, x0 - g)
   const c1 = Math.min(W - 1, x1 + g)
-  const ye = Math.min(H - 4, Math.round(base + 0.045 * H))
-  const k = 2
+  const ye = Math.min(H - 4, Math.round(base + 0.07 * H))
   const at = (x: number, y: number) => (y * W + x) * 4
   const raw = new Float32Array(c1 - c0 + 1).fill(-1)
   for (let x = c0; x <= c1; x++) {
-    const scores: [number, number][] = []
-    for (let y = top + k; y <= ye; y++) {
-      let ok = true
-      const up = [0, 0, 0]
-      const dn = [0, 0, 0]
-      for (let j = 1; j <= k && ok; j++) {
-        const u = at(x, y - j)
-        const v = at(x, y + j)
-        if (d[u + 3] < 200 || d[v + 3] < 200) ok = false
-        else for (let ch = 0; ch < 3; ch++) {
-          up[ch] += d[u + ch]
-          dn[ch] += d[v + ch]
-        }
-      }
-      if (!ok) continue
-      const sc = Math.hypot(up[0] - dn[0], up[1] - dn[1], up[2] - dn[2]) / k
-      scores.push([y, sc])
+    // il bordino del colletto (chiaro e poco colorato): il pixel più basso vicino alla cima della
+    // colonna. Una spalla non ha bordino; una scritta colorata non conta.
+    let colTop = top
+    while (colTop < ye && d[at(x, colTop) + 3] < 200) colTop++
+    let low = -1
+    for (let y = colTop; y <= Math.min(ye, colTop + 0.08 * H); y++) {
+      const i = at(x, y)
+      if (d[i + 3] < 200) continue
+      const mx = Math.max(d[i], d[i + 1], d[i + 2])
+      const mn = Math.min(d[i], d[i + 1], d[i + 2])
+      if (mn > 165 && mx - mn < 55) low = y
     }
-    // il bordino: il primo bordo netto dall'alto, con il suo secondo lato se è subito sotto (più giù,
-    // es. una scritta sul petto, non conta)
-    // (soglia fissa: una scritta sul petto, più contrastata, non deve far scartare il bordino)
-    const strong = scores.filter(([, sc]) => sc >= 45)
-    const neck = x >= x0 && x <= x1
-    if (neck) {
-      // nelle colonne del collo il colletto arriva alla sua base, mai oltre
-      raw[x - c0] = base
-    } else if (strong.length) {
-      // di lato, una punta del colletto è sottile: il bordino sta subito sotto la cima della colonna
-      // (su una spalla il primo bordo netto, es. una scritta, è molto più in basso)
-      let colTop = top
-      while (colTop < ye && d[at(x, colTop) + 3] < 200) colTop++
-      const y1 = strong[0][0]
-      const pair = strong.filter(([y]) => y <= y1 + 0.02 * H)
-      const b = Math.min(ye, pair[pair.length - 1][0] + k)
-      if (y1 - colTop <= 0.03 * H) raw[x - c0] = b
-    }
+    // nelle colonne del collo il colletto arriva almeno alla sua base, e fino al bordino se scende
+    // (il bavero aperto); di lato c'è solo dove c'è il bordino (le punte)
+    if (x >= x0 && x <= x1) raw[x - c0] = low >= 0 ? Math.max(low + 1, base) : base
+    else if (low >= 0) raw[x - c0] = low + 1
   }
-  // le colonne in più ai lati valgono solo se attaccate al colletto senza interruzioni
-  for (let x = x0 - 1; x >= c0; x--) if (raw[x - c0] < 0) for (let j = x; j >= c0; j--) raw[j - c0] = -1
-  for (let x = x1 + 1; x <= c1; x++) if (raw[x - c0] < 0) for (let j = x; j <= c1; j++) raw[j - c0] = -1
+  // le colonne in più ai lati valgono solo se attaccate al colletto: un buco corto (fino a 5 colonne)
+  // tra colonne buone si riempie con la media delle vicine, uno più lungo chiude la punta
+  const gap = 5
+  const walk = (from: number, to: number, step: 1 | -1) => {
+    let last = from - step
+    for (let x = from; step > 0 ? x <= to : x >= to; x += step) {
+      if (raw[x - c0] >= 0) {
+        const holes = Math.abs(x - last) - 1
+        for (let j = 1; j <= holes; j++) {
+          const a = raw[last - c0]
+          raw[last + j * step - c0] = a + ((raw[x - c0] - a) * j) / (holes + 1)
+        }
+        last = x
+      } else if (Math.abs(x - last) > gap) {
+        for (let j = x; step > 0 ? j <= to : j >= to; j += step) raw[j - c0] = -1
+        return
+      }
+    }
+    // in fondo, i buchi dopo l'ultima colonna buona restano vuoti
+    for (let j = last + step; step > 0 ? j <= to : j >= to; j += step) raw[j - c0] = -1
+  }
+  walk(x0 - 1, c0, -1)
+  walk(x1 + 1, c1, 1)
   // via i salti isolati (mediana corta)
   const bottom = Float32Array.from(raw, (v, i) => {
     if (v < 0) return -1
