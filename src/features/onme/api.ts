@@ -5,7 +5,7 @@ import { useBodyPhotoUrl, useProfile } from '@/features/profile/api'
 import { supabase } from '@/lib/supabase'
 import type { Category, Garment } from '@/lib/garments'
 import type { Anchors } from '@/lib/mannequin'
-import { loadBitmap, drawScaled } from '@/lib/image/canvas'
+import { loadBitmap, drawScaled, releaseCanvas } from '@/lib/image/canvas'
 import { encodeLayer } from '@/lib/image/encode'
 import { adjustLayer, makeOnMeLayer, type AdjustGuide, type LayerAdjust, type OnMeCategory } from '@/lib/onMe'
 import { importGeminiShape } from '@/lib/onMeGemini'
@@ -115,6 +115,7 @@ const splitOf = (a?: Anchors | null) => (a ? a.waist.y + (a.hips.y - a.waist.y) 
 /** Salva un livello "su di me" sul modo e toglie quello vecchio. */
 async function storeLayer(g: Garment, w: Wear, layer: HTMLCanvasElement, bodyPath: string, userId: string) {
   const blob = await encodeLayer(layer)
+  releaseCanvas(layer)
   const path = `${userId}/onme/${g.id}-${w.id}-${Date.now()}.webp`
   const store = supabase.storage.from(BUCKET)
   const up = await store.upload(path, blob, { contentType: 'image/webp', upsert: false })

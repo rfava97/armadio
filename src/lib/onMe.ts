@@ -1,4 +1,4 @@
-import { ctx2d, makeCanvas } from './image/canvas'
+import { ctx2d, makeCanvas, releaseCanvas } from './image/canvas'
 import { keepMainParts } from './image/components'
 import { callTryOn, flatten } from './tryon'
 import type { Anchors } from './mannequin'
@@ -410,15 +410,27 @@ function warpSleeves(c: HTMLCanvasElement, sleeves: Sleeve[]) {
     const cos = Math.cos(b)
     const sin = Math.sin(b)
     const k = 1 / sl.len - 1
-    const x0 = sl.left ? 0 : Math.max(0, Math.floor(sl.edge))
-    const x1 = sl.left ? Math.min(W, Math.ceil(sl.edge)) : W
-    for (let y = 0; y < H; y++) {
+    // solo il riquadro della manica, prima e dopo la correzione (con margine): fuori resta com'è
+    const fa = -b
+    const cx = sl.cuff.x - sl.shoulder.x
+    const cy = sl.cuff.y - sl.shoulder.y
+    const nx = sl.shoulder.x + sl.len * (cx * Math.cos(fa) - cy * Math.sin(fa))
+    const ny = sl.shoulder.y + sl.len * (cx * Math.sin(fa) + cy * Math.cos(fa))
+    const mx = 0.1 * W
+    const my = 0.08 * H
+    const bx0 = Math.min(sl.shoulder.x, sl.cuff.x, nx) - mx
+    const bx1 = Math.max(sl.shoulder.x, sl.cuff.x, nx) + mx
+    const x0 = Math.max(0, Math.floor(sl.left ? bx0 : sl.edge))
+    const x1 = Math.min(W, Math.ceil(sl.left ? sl.edge : bx1))
+    const y0 = Math.max(0, Math.floor(sl.shoulder.y - my))
+    const y1 = Math.min(H, Math.ceil(Math.max(sl.cuff.y, ny) + my))
+    for (let y = y0; y < y1; y++) {
       for (let x = x0; x < x1; x++) {
         const we = Math.min(1, Math.max(0, (sl.left ? sl.edge - x : x - sl.edge) / ramp))
         if (we === 0) continue
         const dx = x - sl.shoulder.x
         const dy = y - sl.shoulder.y
-        const t = Math.min(1, Math.hypot(dx, dy) / bend)
+        const t = Math.min(1, Math.sqrt(dx * dx + dy * dy) / bend)
         const w = we * t * t * (3 - 2 * t)
         if (w === 0) continue
         let rx = dx * cos - dy * sin
@@ -444,14 +456,19 @@ function warpSleeves(c: HTMLCanvasElement, sleeves: Sleeve[]) {
         const in1 = ix + 1 >= 0 && ix + 1 < W
         const r0 = iy >= 0 && iy < H
         const r1 = iy + 1 >= 0 && iy + 1 < H
-        const w00 = in0 && r0 ? (1 - ax) * (1 - ay) : 0
-        const w10 = in1 && r0 ? ax * (1 - ay) : 0
-        const w01 = in0 && r1 ? (1 - ax) * ay : 0
-        const w11 = in1 && r1 ? ax * ay : 0
         const j00 = (iy * W + ix) * 4
         const j10 = j00 + 4
         const j01 = j00 + W * 4
         const j11 = j01 + 4
+        const w00 = in0 && r0 && s[j00 + 3] ? (1 - ax) * (1 - ay) : 0
+        const w10 = in1 && r0 && s[j10 + 3] ? ax * (1 - ay) : 0
+        const w01 = in0 && r1 && s[j01 + 3] ? (1 - ax) * ay : 0
+        const w11 = in1 && r1 && s[j11 + 3] ? ax * ay : 0
+        // vuoto tutt'intorno: trasparente (il caso più frequente, subito)
+        if (!w00 && !w10 && !w01 && !w11) {
+          o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0
+          continue
+        }
         for (let ch = 0; ch < 4; ch++) {
           o[i + ch] =
             (w00 ? s[j00 + ch] * w00 : 0) + (w10 ? s[j10 + ch] * w10 : 0) + (w01 ? s[j01 + ch] * w01 : 0) + (w11 ? s[j11 + ch] * w11 : 0)
@@ -462,8 +479,19 @@ function warpSleeves(c: HTMLCanvasElement, sleeves: Sleeve[]) {
   ctx.putImageData(out, 0, 0)
 }
 
-/** Disegna in `out` (stesse dimensioni di `src`) il livello corretto. */
-export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide, category: OnMeCategory, out: HTMLCanvasElement) {
+/**
+ * Disegna in `out` (stesse dimensioni di `src`) il livello corretto. `scratch` è un canvas di appoggio
+ * da riusare tra un disegno e l'altro (l'anteprima ridisegna a ogni movimento del dito); senza, ne
+ * crea uno e lo libera alla fine.
+ */
+export function renderAdjusted(
+  src: ImageBitmap,
+  a: LayerAdjust,
+  g: AdjustGuide,
+  category: OnMeCategory,
+  out: HTMLCanvasElement,
+  scratch?: HTMLCanvasElement,
+) {
   const W = src.width
   const H = src.height
   if (out.width !== W || out.height !== H) {
@@ -473,8 +501,14 @@ export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide,
   let parts: CanvasImageSource = src
   const sleeves = category === 'tops' && sleevesChanged(a)
   if (partsChanged(a) || sleeves) {
-    const tmp = makeCanvas(W, H)
+    const tmp = scratch ?? makeCanvas(W, H)
+    if (tmp.width !== W || tmp.height !== H) {
+      tmp.width = W
+      tmp.height = H
+    }
     const t = ctx2d(tmp)
+    t.setTransform(1, 0, 0, 1, 0, 0)
+    t.clearRect(0, 0, W, H)
     const c = g.cx * W
     // mezzo pixel di sovrapposizione tra le parti: niente righe trasparenti sulle giunture
     const strip = (sx: number, sw: number, y: number, dx: number, dw: number) => {
@@ -485,10 +519,14 @@ export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide,
       const tr = g.torsoR * W
       const nl = c - (c - tl) * a.torso
       const nr = c + (tr - c) * a.torso
-      for (let y = 0; y < H; y++) {
-        strip(0, tl, y, nl - tl * a.armL, tl * a.armL)
-        strip(tl, tr - tl, y, nl, nr - nl)
-        strip(tr, W - tr, y, nr, (W - tr) * a.armR)
+      // busto e braccia della larghezza originale: niente strisce, si copia e basta (molto più veloce)
+      if (a.torso === 1 && a.armL === 1 && a.armR === 1) t.drawImage(src, 0, 0)
+      else {
+        for (let y = 0; y < H; y++) {
+          strip(0, tl, y, nl - tl * a.armL, tl * a.armL)
+          strip(tl, tr - tl, y, nl, nr - nl)
+          strip(tr, W - tr, y, nr, (W - tr) * a.armR)
+        }
       }
       if (sleeves) {
         // spalle e polsini spostati come il busto e le braccia qui sopra
@@ -521,10 +559,11 @@ export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide,
   ctx.translate(-ox, -oy)
   ctx.drawImage(parts, 0, 0)
   ctx.setTransform(1, 0, 0, 1, 0, 0)
+  if (!scratch && parts !== src) releaseCanvas(parts as HTMLCanvasElement)
 }
 
 /** Immagine del livello per l'anteprima della correzione (più piccola, per seguire il dito). */
-export const previewBitmap = (url: string) => bitmapOf(url, 700)
+export const previewBitmap = (url: string) => bitmapOf(url, 520)
 
 /** Il livello corretto a piena risoluzione, da salvare. */
 export async function adjustLayer(url: string, a: LayerAdjust, g: AdjustGuide, category: OnMeCategory): Promise<HTMLCanvasElement> {

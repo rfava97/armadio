@@ -12,6 +12,16 @@ export function makeCanvas(w: number, h: number): HTMLCanvasElement {
   return c
 }
 
+/**
+ * Libera subito la memoria di un canvas che non serve più: Safari su iPhone ha un tetto basso per
+ * la memoria dei canvas e li libera tardi; oltre il tetto la pagina diventa bianca.
+ */
+export function releaseCanvas(c: HTMLCanvasElement | null | undefined) {
+  if (!c) return
+  c.width = 0
+  c.height = 0
+}
+
 export function ctx2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
   const ctx = c.getContext('2d', { willReadFrequently: true })
   if (!ctx) throw new Error('Canvas 2D non disponibile')
