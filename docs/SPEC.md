@@ -57,7 +57,7 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
   - busto → Maglie, Camicie, Canotte, Felpe e Maglioni, Giacche e Cappotti
   - gambe → Pantaloni, Jeans
   - piedi → Scarpe
-- Max 3 strati sul busto. Ordine z: canotta/maglia < camicia < felpa/maglione < giacca/cappotto.
+- Max 3 strati sul busto, in ordine fisso dall'interno: canotta < maglia < camicia < felpa/maglione < giacca/cappotto. Ogni strato propone (swipe e Cerca) solo i capi più esterni di quello sotto e più interni di quello sopra: niente maglia sopra una felpa, niente due felpe. "+ Strato" aggiunge sopra il capo più vicino tra quelli più esterni e compare solo se ce n'è uno. Un capo arrivato da "Prova nel camerino" va nello strato del suo tipo (sostituisce lo stesso tipo, o si inserisce al suo posto). Gli stati salvati vengono rimessi in ordine (uno per tipo).
 - Tap su "Strato N" → rende attivo quello strato; X → rimuove.
 - Pulsante "Mescola" (icona shuffle) → combinazione casuale.
 

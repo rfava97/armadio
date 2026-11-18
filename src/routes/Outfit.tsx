@@ -33,11 +33,11 @@ import { useAdjustPreview } from '@/features/onme/useAdjustPreview'
 import { FALLBACK_GUIDE, layerGuide, NO_ADJUST, type AdjustGuide, type LayerAdjust } from '@/lib/onMe'
 import {
   addLayer,
-  candidates,
+  canAddLayer,
+  candidatesFor,
   getActiveId,
   initialState,
   loadState,
-  MAX_LAYERS,
   neighbor,
   removeLayer,
   sanitize,
@@ -82,7 +82,7 @@ export default function Outfit() {
     let s = loadState()
     s = s ? sanitize(s, garments) : initialState(garments)
     const g = nav?.garmentId ? garments.find((x) => x.id === nav.garmentId) : undefined
-    if (g) s = wear(s, g)
+    if (g) s = wear(s, g, garments)
     setState(s)
   }
 
@@ -168,7 +168,7 @@ export default function Outfit() {
   }
 
   const empty = !isLoading && !error && (garments?.length ?? 0) === 0
-  const zoneCount = state && garments ? candidates(garments, state.active.zone).length : 0
+  const zoneCount = state && garments ? candidatesFor(state, garments).length : 0
 
   return (
     // alta quanto lo schermo meno la barra in basso: il palco prende tutto lo spazio rimasto
@@ -275,7 +275,7 @@ export default function Outfit() {
                 </div>
               )
             })}
-            {state.outfit.busto.length < MAX_LAYERS && (
+            {canAddLayer(state, garments) && (
               <button
                 type="button"
                 onClick={() => update((s) => addLayer(s, garments))}

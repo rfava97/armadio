@@ -2,9 +2,9 @@ import { BottomSheet } from '@/components/BottomSheet'
 import { Button } from '@/components/ui/button'
 import { GarmentCard } from '@/features/garments/GarmentCard'
 import type { GarmentWithThumb } from '@/features/garments/api'
-import { candidates, getActiveId, ZONE_LABEL, type CamerinoState } from './state'
+import { candidatesFor, getActiveId, ZONE_LABEL, type CamerinoState } from './state'
 
-/** "Cerca capo": tutti i capi compatibili con la zona (o lo strato) attivo, da scegliere con un tocco. */
+/** "Cerca capo": i capi compatibili con la zona (o con lo strato attivo, nel suo ordine), da scegliere con un tocco. */
 export function PickerSheet({
   open,
   garments,
@@ -19,7 +19,8 @@ export function PickerSheet({
   onPick: (id: string | null) => void
 }) {
   const { zone, layer } = state.active
-  const list = candidates(garments, zone) as GarmentWithThumb[]
+  // per il busto solo i capi adatti a questo strato (tra quello sotto e quello sopra)
+  const list = candidatesFor(state, garments) as GarmentWithThumb[]
   const current = getActiveId(state)
   const used = new Set(zone === 'busto' ? state.outfit.busto.filter((id, i) => id && i !== layer) : [])
   const title = zone === 'busto' ? `Strato ${layer + 1}` : ZONE_LABEL[zone]
