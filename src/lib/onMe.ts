@@ -331,6 +331,11 @@ function layerExtent(url: string): Promise<Extent> {
       // - nel vuoto che contiene il centro del corpo: l'apertura di una giacca aperta, lo scollo,
       //   tra le maniche sotto l'orlo. Non nei vuoti di lato (ascelle) né oltre le maniche.
       const e = 2
+      // aperture vere (vuoto al centro con il capo da entrambi i lati: zip aperta, scollo): lì lo
+      // strato sotto si vede sempre, anche contro la regola per colonne qui sotto
+      const gaps = makeCanvas(W, H)
+      const gctx = ctx2d(gaps)
+      gctx.fillStyle = '#000'
       for (let y = 0; y < H; y++) {
         const list = runs[y]
         if (!list.length) {
@@ -344,6 +349,7 @@ function layerExtent(url: string): Promise<Extent> {
         const g0 = left ? left[1] + 1 - e : 0
         const g1 = right ? right[0] - 1 + e : W - 1
         ctx.fillRect(g0, y, g1 - g0 + 1, 1)
+        if (left && right) gctx.fillRect(g0, y, g1 - g0 + 1, 1)
       }
       // e per colonne: dove c'è il capo, sotto non si vede niente sopra il suo bordo più alto (le
       // spalle oblique di una giacca lasciano dei vuoti nelle righe, ma non nelle colonne)
@@ -384,7 +390,9 @@ function layerExtent(url: string): Promise<Extent> {
       ctx.globalCompositeOperation = 'destination-in'
       ctx.drawImage(cols, 0, 0)
       ctx.globalCompositeOperation = 'source-over'
+      ctx.drawImage(gaps, 0, 0)
       releaseCanvas(cols)
+      releaseCanvas(gaps)
       return { mask: c, top: top < 0 ? 1 : top / H, rowL, rowR, colBottom }
     })()
     extents.set(url, p)
