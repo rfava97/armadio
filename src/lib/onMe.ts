@@ -580,6 +580,20 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
   // (il bordo vero del cappuccio sulle spalle è un'ombra leggera, non affidabile), solo nelle colonne
   // della parte stretta: sulle spalle cappuccio e felpa sono dello stesso colore e non si distinguono.
   const overlap = HOOD_OVERLAP * H
+  // l'orlo del cappuccio è una curva morbida: il bordo dei capi sopra (ciuffi di una pelliccia,
+  // cuciture) viene ammorbidito su una fascia larga (mediana, poi media)
+  if (kind === 'hood') {
+    const r = Math.max(2, Math.round(0.03 * W))
+    const win = (src: Float32Array, f: (v: number[]) => number) =>
+      Float32Array.from(src, (v, x) => {
+        if (v < 0) return -1
+        const near: number[] = []
+        for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (src[j] >= 0) near.push(src[j])
+        return f(near)
+      })
+    const med = win(outerTop, (v) => v.sort((a, b) => a - b)[v.length >> 1])
+    outerTop.set(win(med, (v) => v.reduce((a, b) => a + b, 0) / v.length))
+  }
   const grow = 0
   const xs = Math.max(0, x0 - grow)
   const xe = Math.min(W - 1, x0 + bottom.length - 1 + grow)
