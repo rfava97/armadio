@@ -29,7 +29,7 @@ import {
 import { SaveOnMeSheet } from '@/features/onme/SaveOnMeSheet'
 import { AdjustPanel } from '@/features/onme/AdjustPanel'
 import { useAdjustPreview } from '@/features/onme/useAdjustPreview'
-import { layerGuide, NO_ADJUST, type AdjustGuide, type LayerAdjust } from '@/lib/onMe'
+import { FALLBACK_GUIDE, layerGuide, NO_ADJUST, type AdjustGuide, type LayerAdjust } from '@/lib/onMe'
 import {
   addLayer,
   candidates,
@@ -56,9 +56,6 @@ const VIEWS: { key: CamerinoView; label: string }[] = [
   { key: 'tavolo', label: 'Tavolo' },
   { key: 'sudime', label: 'Su di me' },
 ]
-
-/** riferimenti di ripiego se il livello non si legge */
-const FALLBACK_GUIDE: AdjustGuide = { origin: { x: 0.5, y: 0.3 }, cx: 0.5, torsoL: 0.39, torsoR: 0.61, hipY: 0.5, ankleY: 0.88 }
 
 export default function Outfit() {
   const { data: garments, isLoading, error, refetch } = useGarments()

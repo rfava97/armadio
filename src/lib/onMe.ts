@@ -248,11 +248,59 @@ export type LayerAdjust = {
   legR: number
   openL: number
   openR: number
+  /** lunghezza delle maniche, lungo il braccio */
+  sleeveL: number
+  sleeveR: number
+  /** inclinazione delle maniche attorno alla spalla, in gradi (positivo = verso l'esterno) */
+  tiltL: number
+  tiltR: number
 }
-export const NO_ADJUST: LayerAdjust = { scale: 1, stretch: 1, dx: 0, dy: 0, torso: 1, armL: 1, armR: 1, legL: 1, legR: 1, openL: 0, openR: 0 }
+export const NO_ADJUST: LayerAdjust = {
+  scale: 1,
+  stretch: 1,
+  dx: 0,
+  dy: 0,
+  torso: 1,
+  armL: 1,
+  armR: 1,
+  legL: 1,
+  legR: 1,
+  openL: 0,
+  openR: 0,
+  sleeveL: 1,
+  sleeveR: 1,
+  tiltL: 0,
+  tiltR: 0,
+}
 
-/** Riferimenti sul livello, in frazioni: punto fisso, centro del corpo, bordi del busto, fianchi e caviglie. */
-export type AdjustGuide = { origin: { x: number; y: number }; cx: number; torsoL: number; torsoR: number; hipY: number; ankleY: number }
+type Pt = { x: number; y: number }
+/**
+ * Riferimenti sul livello, in frazioni: punto fisso, centro del corpo, bordi del busto (le spalle),
+ * altezza delle spalle, polsini (il punto della manica più lontano dalla spalla), fianchi e caviglie.
+ */
+export type AdjustGuide = {
+  origin: Pt
+  cx: number
+  torsoL: number
+  torsoR: number
+  shoulderY: number
+  cuffL: Pt
+  cuffR: Pt
+  hipY: number
+  ankleY: number
+}
+
+export const FALLBACK_GUIDE: AdjustGuide = {
+  origin: { x: 0.5, y: 0.3 },
+  cx: 0.5,
+  torsoL: 0.39,
+  torsoR: 0.61,
+  shoulderY: 0.24,
+  cuffL: { x: 0.27, y: 0.52 },
+  cuffR: { x: 0.73, y: 0.52 },
+  hipY: 0.5,
+  ankleY: 0.88,
+}
 
 const bitmapOf = async (url: string, maxSide?: number) => {
   const blob = await (await fetch(url)).blob()
@@ -284,20 +332,44 @@ export async function layerGuide(url: string, anchors: Anchors | null | undefine
     }
   }
   const origin = right < left ? { x: 0.5, y: 0.3 } : { x: (left + right + 1) / 2 / c.width, y: top / c.height }
-  if (!anchors) return { origin, cx: 0.5, torsoL: 0.39, torsoR: 0.61, hipY: 0.5, ankleY: 0.88 }
+  if (!anchors) return { ...FALLBACK_GUIDE, origin }
   // dalla foto del corpo al livello, che ha ON_ME_PAD × lato lungo di margine su ogni lato
   const W = c.width
   const H = c.height
   const pad = (ON_ME_PAD * Math.max(W, H)) / (1 + 2 * ON_ME_PAD)
   const fx = (x: number) => (pad + x * (W - 2 * pad)) / W
   const fy = (y: number) => (pad + y * (H - 2 * pad)) / H
-  const sl = Math.min(anchors.shoulder_l.x, anchors.shoulder_r.x)
-  const sr = Math.max(anchors.shoulder_l.x, anchors.shoulder_r.x)
+  const torsoL = fx(Math.min(anchors.shoulder_l.x, anchors.shoulder_r.x))
+  const torsoR = fx(Math.max(anchors.shoulder_l.x, anchors.shoulder_r.x))
+  const shoulderY = fy((anchors.shoulder_l.y + anchors.shoulder_r.y) / 2)
+  // polsino: il punto della manica più lontano dalla spalla, fuori dal busto e sotto le spalle
+  const cuff = (side: -1 | 1, fallback: Pt): Pt => {
+    const sx = (side < 0 ? torsoL : torsoR) * W
+    const sy = shoulderY * H
+    const margin = 0.03 * W
+    let best = -1
+    let p = fallback
+    for (let y = Math.ceil(sy); y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (side < 0 ? x > sx - margin : x < sx + margin) continue
+        if (d[(y * W + x) * 4 + 3] < 100) continue
+        const dist = (x - sx) ** 2 + (y - sy) ** 2
+        if (dist > best) {
+          best = dist
+          p = { x: x / W, y: y / H }
+        }
+      }
+    }
+    return p
+  }
   return {
     origin,
     cx: fx((anchors.hips.x + anchors.neck.x) / 2),
-    torsoL: fx(sl),
-    torsoR: fx(sr),
+    torsoL,
+    torsoR,
+    shoulderY,
+    cuffL: cuff(-1, FALLBACK_GUIDE.cuffL),
+    cuffR: cuff(1, FALLBACK_GUIDE.cuffR),
     hipY: fy(anchors.hips.y),
     ankleY: fy((anchors.ankle_l.y + anchors.ankle_r.y) / 2),
   }
@@ -305,6 +377,90 @@ export async function layerGuide(url: string, anchors: Anchors | null | undefine
 
 const partsChanged = (a: LayerAdjust) =>
   a.torso !== 1 || a.armL !== 1 || a.armR !== 1 || a.legL !== 1 || a.legR !== 1 || a.openL !== 0 || a.openR !== 0
+const sleevesChanged = (a: LayerAdjust) => a.sleeveL !== 1 || a.sleeveR !== 1 || a.tiltL !== 0 || a.tiltR !== 0
+
+type Sleeve = { edge: number; shoulder: Pt; cuff: Pt; len: number; tilt: number; left: boolean }
+
+/**
+ * Maniche: ognuna ruota attorno alla spalla e si allunga lungo il braccio (spalla → polsino), senza
+ * ingrossarsi. Pixel per pixel all'indietro, con interpolazione; vicino al busto l'effetto sfuma a zero,
+ * così la giuntura con il busto non si apre. Coordinate in pixel.
+ */
+function warpSleeves(c: HTMLCanvasElement, sleeves: Sleeve[]) {
+  const W = c.width
+  const H = c.height
+  const ctx = ctx2d(c)
+  const src = ctx.getImageData(0, 0, W, H)
+  const out = ctx.createImageData(W, H)
+  const s = src.data
+  const o = out.data
+  o.set(s)
+  const ramp = Math.max(2, 0.02 * W)
+  for (const sl of sleeves) {
+    if (sl.len === 1 && sl.tilt === 0) continue
+    let ux = sl.cuff.x - sl.shoulder.x
+    let uy = sl.cuff.y - sl.shoulder.y
+    const n = Math.hypot(ux, uy) || 1
+    // l'effetto cresce piano dalla spalla lungo il braccio: la manica si piega, non si strappa
+    const bend = n * 0.4
+    ux /= n
+    uy /= n
+    // rotazione inversa: a sinistra "verso l'esterno" è in senso orario sullo schermo
+    const b = ((sl.left ? -1 : 1) * sl.tilt * Math.PI) / 180
+    const cos = Math.cos(b)
+    const sin = Math.sin(b)
+    const k = 1 / sl.len - 1
+    const x0 = sl.left ? 0 : Math.max(0, Math.floor(sl.edge))
+    const x1 = sl.left ? Math.min(W, Math.ceil(sl.edge)) : W
+    for (let y = 0; y < H; y++) {
+      for (let x = x0; x < x1; x++) {
+        const we = Math.min(1, Math.max(0, (sl.left ? sl.edge - x : x - sl.edge) / ramp))
+        if (we === 0) continue
+        const dx = x - sl.shoulder.x
+        const dy = y - sl.shoulder.y
+        const t = Math.min(1, Math.hypot(dx, dy) / bend)
+        const w = we * t * t * (3 - 2 * t)
+        if (w === 0) continue
+        let rx = dx * cos - dy * sin
+        let ry = dx * sin + dy * cos
+        const p = Math.max(0, rx * ux + ry * uy) * k
+        rx += p * ux
+        ry += p * uy
+        const fx = x + w * (sl.shoulder.x + rx - x)
+        const fy = y + w * (sl.shoulder.y + ry - y)
+        const i = (y * W + x) * 4
+        // la manica si prende solo dal lato del braccio: niente pezzi di busto ruotati fuori
+        // (con un pixel di margine per l'interpolazione, solo dove il campione si è spostato verso il busto)
+        if (sl.left ? fx > sl.edge - 1.5 && fx > x + 0.5 : fx < sl.edge + 1.5 && fx < x - 0.5) {
+          o[i] = o[i + 1] = o[i + 2] = o[i + 3] = 0
+          continue
+        }
+        // interpolazione bilineare (fuori dall'immagine: trasparente)
+        const ix = Math.floor(fx)
+        const iy = Math.floor(fy)
+        const ax = fx - ix
+        const ay = fy - iy
+        const in0 = ix >= 0 && ix < W
+        const in1 = ix + 1 >= 0 && ix + 1 < W
+        const r0 = iy >= 0 && iy < H
+        const r1 = iy + 1 >= 0 && iy + 1 < H
+        const w00 = in0 && r0 ? (1 - ax) * (1 - ay) : 0
+        const w10 = in1 && r0 ? ax * (1 - ay) : 0
+        const w01 = in0 && r1 ? (1 - ax) * ay : 0
+        const w11 = in1 && r1 ? ax * ay : 0
+        const j00 = (iy * W + ix) * 4
+        const j10 = j00 + 4
+        const j01 = j00 + W * 4
+        const j11 = j01 + 4
+        for (let ch = 0; ch < 4; ch++) {
+          o[i + ch] =
+            (w00 ? s[j00 + ch] * w00 : 0) + (w10 ? s[j10 + ch] * w10 : 0) + (w01 ? s[j01 + ch] * w01 : 0) + (w11 ? s[j11 + ch] * w11 : 0)
+        }
+      }
+    }
+  }
+  ctx.putImageData(out, 0, 0)
+}
 
 /** Disegna in `out` (stesse dimensioni di `src`) il livello corretto. */
 export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide, category: OnMeCategory, out: HTMLCanvasElement) {
@@ -315,7 +471,8 @@ export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide,
     out.height = H
   }
   let parts: CanvasImageSource = src
-  if (partsChanged(a)) {
+  const sleeves = category === 'tops' && sleevesChanged(a)
+  if (partsChanged(a) || sleeves) {
     const tmp = makeCanvas(W, H)
     const t = ctx2d(tmp)
     const c = g.cx * W
@@ -332,6 +489,16 @@ export function renderAdjusted(src: ImageBitmap, a: LayerAdjust, g: AdjustGuide,
         strip(0, tl, y, nl - tl * a.armL, tl * a.armL)
         strip(tl, tr - tl, y, nl, nr - nl)
         strip(tr, W - tr, y, nr, (W - tr) * a.armR)
+      }
+      if (sleeves) {
+        // spalle e polsini spostati come il busto e le braccia qui sopra
+        const sy = g.shoulderY * H
+        const cl = { x: nl - (tl - g.cuffL.x * W) * a.armL, y: g.cuffL.y * H }
+        const cr = { x: nr + (g.cuffR.x * W - tr) * a.armR, y: g.cuffR.y * H }
+        warpSleeves(tmp, [
+          { edge: nl, shoulder: { x: nl, y: sy }, cuff: cl, len: a.sleeveL, tilt: a.tiltL, left: true },
+          { edge: nr, shoulder: { x: nr, y: sy }, cuff: cr, len: a.sleeveR, tilt: a.tiltR, left: false },
+        ])
       }
     } else {
       // l'apertura cresce dal cavallo (poco sotto i fianchi) fino alle caviglie, e continua sotto

@@ -18,20 +18,44 @@ const WHOLE: Slider[] = [
   { key: 'dx', label: 'Sinistra / destra', min: -0.05, max: 0.05, step: 0.002, show: shift },
 ]
 
+const deg = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v)}°`
+
+type Tab = { key: string; label: string; sliders: Slider[] }
+
 /** Le parti, come le vedi sullo schermo (sinistra = lato sinistro della foto). */
-const PARTS: Record<OnMeCategory, Slider[]> = {
-  tops: [
-    { key: 'torso', label: 'Busto', min: 0.85, max: 1.2, step: 0.005, show: pct },
-    { key: 'armL', label: 'Braccio sinistro', min: 0.8, max: 1.25, step: 0.005, show: pct },
-    { key: 'armR', label: 'Braccio destro', min: 0.8, max: 1.25, step: 0.005, show: pct },
-  ],
-  bottoms: [
-    { key: 'legL', label: 'Gamba sinistra', min: 0.8, max: 1.25, step: 0.005, show: pct },
-    { key: 'legR', label: 'Gamba destra', min: 0.8, max: 1.25, step: 0.005, show: pct },
-    { key: 'openL', label: 'Apri sinistra', min: -0.03, max: 0.06, step: 0.001, show: shift },
-    { key: 'openR', label: 'Apri destra', min: -0.03, max: 0.06, step: 0.001, show: shift },
-  ],
-}
+const TOP_PARTS: Tab[] = [
+  {
+    key: 'arms',
+    label: 'Busto e braccia',
+    sliders: [
+      { key: 'torso', label: 'Busto', min: 0.85, max: 1.2, step: 0.005, show: pct },
+      { key: 'armL', label: 'Braccio sinistro', min: 0.8, max: 1.25, step: 0.005, show: pct },
+      { key: 'armR', label: 'Braccio destro', min: 0.8, max: 1.25, step: 0.005, show: pct },
+    ],
+  },
+  {
+    key: 'sleeves',
+    label: 'Maniche',
+    sliders: [
+      { key: 'tiltL', label: 'Inclina sinistra', min: -10, max: 15, step: 0.5, show: deg },
+      { key: 'tiltR', label: 'Inclina destra', min: -10, max: 15, step: 0.5, show: deg },
+      { key: 'sleeveL', label: 'Manica sinistra', min: 0.8, max: 1.2, step: 0.005, show: pct },
+      { key: 'sleeveR', label: 'Manica destra', min: 0.8, max: 1.2, step: 0.005, show: pct },
+    ],
+  },
+]
+const BOTTOM_PARTS: Tab[] = [
+  {
+    key: 'legs',
+    label: 'Gambe',
+    sliders: [
+      { key: 'legL', label: 'Gamba sinistra', min: 0.8, max: 1.25, step: 0.005, show: pct },
+      { key: 'legR', label: 'Gamba destra', min: 0.8, max: 1.25, step: 0.005, show: pct },
+      { key: 'openL', label: 'Apri sinistra', min: -0.03, max: 0.06, step: 0.001, show: shift },
+      { key: 'openR', label: 'Apri destra', min: -0.03, max: 0.06, step: 0.001, show: shift },
+    ],
+  },
+]
 
 /** Sotto il palco "Su di me": correzione a mano del capo attivo, con anteprima sulla foto. */
 export function AdjustPanel({
@@ -53,8 +77,9 @@ export function AdjustPanel({
   saving: boolean
   error: string | null
 }) {
-  const [tab, setTab] = useState<'whole' | 'parts'>('whole')
-  const sliders = tab === 'whole' ? WHOLE : PARTS[category]
+  const tabs: Tab[] = [{ key: 'whole', label: 'Insieme', sliders: WHOLE }, ...(category === 'tops' ? TOP_PARTS : BOTTOM_PARTS)]
+  const [tab, setTab] = useState('whole')
+  const sliders = (tabs.find((t) => t.key === tab) ?? tabs[0]).sliders
   const changed = (Object.keys(NO_ADJUST) as (keyof LayerAdjust)[]).some((k) => value[k] !== NO_ADJUST[k])
   return (
     <div className="mt-2 flex flex-col gap-2 rounded-card border border-border bg-surface p-3">
@@ -71,12 +96,7 @@ export function AdjustPanel({
         </button>
       </div>
       <div className="flex rounded-full bg-surface-muted p-0.5" role="tablist">
-        {(
-          [
-            ['whole', 'Insieme'],
-            ['parts', category === 'tops' ? 'Busto e braccia' : 'Gambe'],
-          ] as const
-        ).map(([k, label]) => (
+        {tabs.map(({ key: k, label }) => (
           <button
             key={k}
             type="button"
