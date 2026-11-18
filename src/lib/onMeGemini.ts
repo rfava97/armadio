@@ -1,7 +1,7 @@
 import { ctx2d, makeCanvas } from './image/canvas'
 import { keepMainParts } from './image/components'
 import { ON_ME_PAD, type OnMeCategory } from './onMe'
-import { describeWear, parseWear, sizeRules } from './wearStyle'
+import { describeWear, parseWear } from './wearStyle'
 
 /**
  * Esperimento "Su di me con Gemini" (alternativa a FASHN, anche quando la sua quota è finita).
@@ -48,26 +48,35 @@ export async function makeSilhouette(bodyUrl: string): Promise<Frame> {
 }
 
 /**
- * Prompt per vestire la sagoma verde con il capo. Parte dal testo che ha funzionato con Gemini
- * (sagoma verde intatta); vestibilità e lunghezza vengono dal nome del modo (es. "Cropped",
- * "Baggy", "Aperta oversize"), riferite al manichino.
+ * Prompt per vestire la sagoma verde con il capo: è il testo originale che ha funzionato con Gemini
+ * (manichino intatto). Ogni frase in più su taglia e lunghezza gli fa ridisegnare il manichino, quindi
+ * la vestibilità del modo (Cropped, Baggy, Aperta…) entra solo in "worn like this" e in una breve
+ * nota sulla lunghezza. Tolto solo "(do not make loose or oversized garments tight)", che lo faceva
+ * abbondare, salvo per i modi larghi.
  */
 export function geminiShapePrompt(kind: string, howIt: string, category = 'maglie'): string {
   const style = parseWear(howIt)
   const bottom = category === 'pantaloni' || category === 'jeans'
+  const relaxed = style.oversize || style.baggy
+  const ends = bottom
+    ? style.baggy || style.oversize
+      ? 'the hems fall loosely over the feet'
+      : style.cropped || style.rolled
+        ? 'the hems end above the ankles'
+        : 'the hems end at the ankles'
+    : `${style.cropped ? 'the hem ends above the waist; ' : ''}the collar sits around the neck, below the chin; the cuffs end at the wrists`
+  const open = style.open ? ' It must be green under the opened zip.' : ''
   return [
     'Image 1 is a flat green mannequin silhouette seen from the front, on a white background. Image 2 is a garment.',
     `Dress the green mannequin with ONLY this ${kind}, worn like this: ${describeWear(style, category)}.`,
-    'Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with natural folds and drape.',
-    sizeRules(style, category, 'mannequin'),
-    bottom ? '' : 'The collar sits around the neck, below the chin.',
-    'Wherever the garment does not cover the mannequin (head, neck, inside of the collar, under an opened zip or unbuttoned front, hands, legs) keep the mannequin exactly the same flat green as in image 1: it must be green under the opened zip. Do not draw a person, skin, face, hands, an undershirt or shadows on the mannequin.',
+    `Fit it to the mannequin exactly: same pose, shoulders, neck, arms, torso, waist and legs, with a realistic fit, natural folds and drape${
+      relaxed ? ' (do not make loose or oversized garments tight)' : ''
+    }. ${ends.charAt(0).toUpperCase() + ends.slice(1)}.`,
+    `Wherever the garment does not cover the mannequin (head, neck, inside of the collar, open front, hands, legs) keep the mannequin exactly the same flat green as in image 1.${open} Do not draw a person, skin, face, hands or shadows on the mannequin.`,
     'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. The inside of the garment (lining, back of the collar) may be visible where it naturally would.',
     'Do not move, resize or crop the mannequin: same canvas size, framing and position as image 1. Plain white background, no shadows.',
     'Output: one single image.',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  ].join('\n\n')
 }
 
 const toFile = (c: HTMLCanvasElement, name: string, type: string) =>
