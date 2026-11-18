@@ -315,6 +315,38 @@ function layerExtent(url: string): Promise<Extent> {
           if (top < 0) top = y
         }
       }
+      // e per colonne: dove c'è il capo, sotto non si vede niente sopra il suo bordo più alto (le
+      // spalle oblique di una giacca lasciano dei vuoti nelle righe, ma non nelle colonne)
+      const colTop = new Float32Array(W).fill(-1)
+      for (let x = 0; x < W; x++) {
+        for (let y = 0; y < H; y++) {
+          // anche il bordo sfumato del capo conta: sotto non deve trasparire
+          if (d[(y * W + x) * 4 + 3] > 20) {
+            colTop[x] = y
+            break
+          }
+        }
+      }
+      // bordo ammorbidito (un pixel isolato non alza tutta la colonna)
+      const smooth = Float32Array.from(colTop, (v, x) => {
+        if (v < 0) return -1
+        const near: number[] = []
+        for (let k = Math.max(0, x - 3); k <= Math.min(W - 1, x + 3); k++) if (colTop[k] >= 0) near.push(colTop[k])
+        near.sort((a, b) => a - b)
+        return near[near.length >> 1]
+      })
+      const cols = makeCanvas(W, H)
+      const cctx = ctx2d(cols)
+      cctx.fillStyle = '#000'
+      for (let x = 0; x < W; x++) {
+        // un pixel sotto il bordo: lo strato sotto non fa da contorno al capo sopra
+        const t = smooth[x] < 0 ? 0 : Math.min(H, smooth[x] + 1)
+        cctx.fillRect(x, t, 1, H - t)
+      }
+      ctx.globalCompositeOperation = 'destination-in'
+      ctx.drawImage(cols, 0, 0)
+      ctx.globalCompositeOperation = 'source-over'
+      releaseCanvas(cols)
       return { mask: c, top: top < 0 ? 1 : top / H, rowL, rowR }
     })()
     extents.set(url, p)
