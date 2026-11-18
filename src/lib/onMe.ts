@@ -336,12 +336,16 @@ export function layerRow(photoY: number, photoAspect: number) {
 /**
  * Cappuccio di uno strato sotto, da disegnare sopra i capi esterni (come tirato fuori dalla giacca).
  * È la parte alta dello strato, molto più stretta delle spalle: dall'alto, riga per riga, finché lo
- * strato resta sotto il 60% della sua larghezza alle spalle; ci si ferma dove si allarga (spalle,
- * petto) o poco sotto la riga delle spalle. Solo quella forma, con pochi pixel di sfumatura in basso.
- * null se lo strato non ha cappuccio (la parte stretta in alto è troppo bassa: un girocollo).
+ * strato si allarga piano, fino al salto delle spalle (o poco sotto la riga delle spalle).
+ * Il taglio in basso segue il bordo vero del cappuccio: colonna per colonna, attorno a quella riga,
+ * il cambio di colore più netto (bordo o ombra del cappuccio), poi la linea viene ammorbidita; dove
+ * il bordo non si trova vale la riga. null se lo strato non ha cappuccio (un girocollo).
  * `shoulder`: riga delle spalle nel fotogramma dei livelli.
  */
-export async function hoodMask(url: string, shoulder: number): Promise<HTMLCanvasElement | null> {
+const hoods = new Map<string, Promise<HoodShape | null>>()
+type HoodShape = { W: number; H: number; top: number; x0: number; bottom: Float32Array }
+
+async function hoodShape(url: string, shoulder: number): Promise<HoodShape | null> {
   const { mask, rowL, rowR } = await layerExtent(url)
   const W = mask.width
   const H = mask.height
@@ -354,18 +358,117 @@ export async function hoodMask(url: string, shoulder: number): Promise<HTMLCanva
   let ref = 0
   for (let y = Math.max(0, sy - Math.round(0.02 * H)); y <= Math.min(H - 1, sy + Math.round(0.04 * H)); y++) ref = Math.max(ref, width(y))
   if (!ref) return null
+  // il cappuccio si allarga piano; dove iniziano le spalle la larghezza fa un salto
   const limit = Math.min(H, Math.round((shoulder + 0.02) * H))
-  let end = top
-  while (end < limit && width(end) > 0 && width(end) < ref * 0.6) end++
+  const jump = 0.05 * W
+  // (la cima arrotondata del cappuccio si allarga in fretta: i salti contano da un po' più giù)
+  const from = top + Math.round(0.04 * H)
+  let end = top + 2
+  while (end < limit && width(end) > 0 && width(end) < ref * 0.85 && (end < from || width(end) - width(end - 2) < jump)) end++
   if (end - top < 0.04 * H) return null
+
+  // colonne del cappuccio (con un po' di margine verso le spalle)
+  let x0 = W
+  let x1 = 0
+  for (let y = top; y < end; y++) {
+    x0 = Math.min(x0, rowL[y])
+    x1 = Math.max(x1, rowR[y])
+  }
+  const grow = Math.round(0.03 * W)
+  x0 = Math.max(0, x0 - grow)
+  x1 = Math.min(W - 1, x1 + grow)
+
+  // colori dello strato, alla stessa scala della maschera
+  const bmp = await bitmapOf(url, 400)
+  const c = makeCanvas(W, H)
+  ctx2d(c).drawImage(bmp, 0, 0, W, H)
+  bmp.close()
+  const d = ctx2d(c).getImageData(0, 0, W, H).data
+  releaseCanvas(c)
+  const at = (x: number, y: number) => (y * W + x) * 4
+
+  // per colonna: il cambio di colore più netto tra metà cappuccio e poco sotto la riga
+  const ys = Math.round(top + (end - top) * 0.5)
+  const ye = Math.min(H - 4, Math.round(Math.max(end, sy) + 0.05 * H))
+  const n = x1 - x0 + 1
+  const raw = new Float32Array(n).fill(NaN)
+  const k = 3
+  for (let x = x0; x <= x1; x++) {
+    let best = 0
+    let by = -1
+    for (let y = Math.max(ys, k); y <= ye; y++) {
+      let ok = true
+      const up = [0, 0, 0]
+      const dn = [0, 0, 0]
+      for (let j = 1; j <= k && ok; j++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = Math.min(W - 1, Math.max(0, x + dx))
+          const u = at(xx, y - j)
+          const v = at(xx, y + j)
+          if (d[u + 3] < 200 || d[v + 3] < 200) {
+            ok = false
+            break
+          }
+          for (let ch = 0; ch < 3; ch++) {
+            up[ch] += d[u + ch]
+            dn[ch] += d[v + ch]
+          }
+        }
+      }
+      if (!ok) continue
+      const score = Math.hypot(up[0] - dn[0], up[1] - dn[1], up[2] - dn[2]) / (3 * k)
+      // a parità, il più in basso: il bordo esterno del cappuccio, non la fodera vicino al collo
+      if (score >= best * 0.95 && score > 0) {
+        if (score > best) best = score
+        by = y
+      }
+    }
+    if (best >= 18 && by >= 0) raw[x - x0] = by
+  }
+
+  // buchi: dalla colonna valida più vicina; nessuna valida: la riga di prima
+  const valid = [...raw].map((v, i) => (Number.isNaN(v) ? -1 : i)).filter((i) => i >= 0)
+  const filled = new Float32Array(n)
+  for (let i = 0; i < n; i++) {
+    if (!Number.isNaN(raw[i])) filled[i] = raw[i]
+    else if (!valid.length) filled[i] = end
+    else {
+      const j = valid.reduce((a, b) => (Math.abs(b - i) < Math.abs(a - i) ? b : a))
+      filled[i] = raw[j]
+    }
+  }
+  // linea morbida: mediana (via i salti isolati), poi media
+  const win = (arr: Float32Array, r: number, f: (v: number[]) => number) =>
+    Float32Array.from(arr, (_, i) => f([...arr.slice(Math.max(0, i - r), Math.min(n, i + r + 1))]))
+  const median = win(filled, 4, (v) => v.sort((a, b) => a - b)[v.length >> 1])
+  const bottom = win(median, 5, (v) => v.reduce((a, b) => a + b, 0) / v.length)
+  return { W, H, top, x0, bottom }
+}
+
+export async function hoodMask(url: string, shoulder: number): Promise<HTMLCanvasElement | null> {
+  const key = `${url}|${shoulder.toFixed(4)}`
+  let p = hoods.get(key)
+  if (!p) {
+    p = hoodShape(url, shoulder)
+    hoods.set(key, p)
+    if (hoods.size > 24) hoods.delete(hoods.keys().next().value!)
+  }
+  const shape = await p
+  if (!shape) return null
+  const { W, H, top, x0, bottom } = shape
   const c = makeCanvas(W, H)
   const ctx = ctx2d(c)
   ctx.fillStyle = '#000'
-  const m = Math.round(W * 0.005)
-  const fade = Math.max(2, Math.round(0.008 * H))
-  for (let y = top; y < end; y++) {
-    ctx.globalAlpha = Math.min(1, (end - y) / fade)
-    ctx.fillRect(rowL[y] - m, y, rowR[y] - rowL[y] + 1 + 2 * m, 1)
+  const fade = Math.max(2, Math.round(0.006 * H))
+  for (let i = 0; i < bottom.length; i++) {
+    const b = bottom[i]
+    ctx.globalAlpha = 1
+    ctx.fillRect(x0 + i, top, 1, Math.max(0, b - fade - top))
+    // sfumatura di pochi pixel sul bordo
+    for (let y = Math.max(top, Math.floor(b - fade)); y < b; y++) {
+      ctx.globalAlpha = Math.min(1, (b - y) / fade)
+      ctx.fillRect(x0 + i, y, 1, 1)
+    }
   }
   return c
 }
