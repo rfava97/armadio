@@ -396,7 +396,7 @@ export default function Outfit() {
               bodyPath={bodyPath}
               queue={queue}
               onPrepare={prepare}
-              onAdjust={activeLayerUrl ? startAdjust : undefined}
+              onAdjust={activeLayerUrl && !queue.running ? startAdjust : undefined}
             />
           )}
 
@@ -519,23 +519,25 @@ function OnMeStatus({
         {queue.running && !queue.error && <Spinner className="size-4 shrink-0 text-accent" />}
         {text}
       </p>
-      {action?.label === 'Rifai' && onAdjust && (
-        <Button size="md" variant="secondary" className="h-9 shrink-0 px-3" onClick={onAdjust}>
-          <SlidersHorizontal className="size-4" aria-hidden />
-          Regola
-        </Button>
-      )}
-      {action && (
-        <Button
-          size="md"
-          variant={action.label === 'Rifai' ? 'secondary' : 'primary'}
-          className="h-9 shrink-0 px-4"
-          onClick={() => onPrepare(action.items)}
-        >
-          {action.label === 'Rifai' ? <RotateCcw className="size-4" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
-          {action.label}
-        </Button>
-      )}
+      <div className="flex shrink-0 gap-2">
+        {onAdjust && (
+          <Button size="md" variant="secondary" className="h-9 shrink-0 px-3" onClick={onAdjust}>
+            <SlidersHorizontal className="size-4" aria-hidden />
+            Regola
+          </Button>
+        )}
+        {action && (
+          <Button
+            size="md"
+            variant={action.label === 'Rifai' ? 'secondary' : 'primary'}
+            className="h-9 shrink-0 px-4"
+            onClick={() => onPrepare(action.items)}
+          >
+            {action.label === 'Rifai' ? <RotateCcw className="size-4" aria-hidden /> : <Sparkles className="size-4" aria-hidden />}
+            {action.label}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
