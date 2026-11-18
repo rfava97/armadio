@@ -336,10 +336,10 @@ export function layerRow(photoY: number, photoAspect: number) {
 /**
  * Cappuccio di uno strato sotto, da disegnare sopra i capi esterni (come tirato fuori dalla giacca).
  * È la parte alta dello strato, molto più stretta delle spalle: dall'alto, riga per riga, finché lo
- * strato si allarga piano, fino al salto delle spalle (o poco sotto la riga delle spalle).
- * Il taglio in basso segue il bordo vero del cappuccio: colonna per colonna, attorno a quella riga,
- * il cambio di colore più netto (bordo o ombra del cappuccio), poi la linea viene ammorbidita; dove
- * il bordo non si trova vale la riga. null se lo strato non ha cappuccio (un girocollo).
+ * strato resta sotto il 60% della sua larghezza alle spalle (o poco sotto la riga delle spalle): quella
+ * riga è il limite più basso. Dentro, il taglio segue il bordo vero del cappuccio: colonna per colonna
+ * il cambio di colore più netto (bordo o ombra) tra metà cappuccio e poco sotto la riga,
+ * poi la linea viene ammorbidita; dove il bordo non si trova vale la riga. Mai sulle spalle. null se lo strato non ha cappuccio (un girocollo).
  * `shoulder`: riga delle spalle nel fotogramma dei livelli.
  */
 const hoods = new Map<string, Promise<HoodShape | null>>()
@@ -358,25 +358,19 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
   let ref = 0
   for (let y = Math.max(0, sy - Math.round(0.02 * H)); y <= Math.min(H - 1, sy + Math.round(0.04 * H)); y++) ref = Math.max(ref, width(y))
   if (!ref) return null
-  // il cappuccio si allarga piano; dove iniziano le spalle la larghezza fa un salto
+  // fino a dove lo strato resta stretto (sotto il 60% delle spalle): è il limite più basso del taglio
   const limit = Math.min(H, Math.round((shoulder + 0.02) * H))
-  const jump = 0.05 * W
-  // (la cima arrotondata del cappuccio si allarga in fretta: i salti contano da un po' più giù)
-  const from = top + Math.round(0.04 * H)
-  let end = top + 2
-  while (end < limit && width(end) > 0 && width(end) < ref * 0.85 && (end < from || width(end) - width(end - 2) < jump)) end++
+  let end = top
+  while (end < limit && width(end) > 0 && width(end) < ref * 0.6) end++
   if (end - top < 0.04 * H) return null
 
-  // colonne del cappuccio (con un po' di margine verso le spalle)
+  // colonne del cappuccio: solo quelle della parte stretta (niente spalle)
   let x0 = W
   let x1 = 0
   for (let y = top; y < end; y++) {
     x0 = Math.min(x0, rowL[y])
     x1 = Math.max(x1, rowR[y])
   }
-  const grow = Math.round(0.03 * W)
-  x0 = Math.max(0, x0 - grow)
-  x1 = Math.min(W - 1, x1 + grow)
 
   // colori dello strato, alla stessa scala della maschera
   const bmp = await bitmapOf(url, 400)
@@ -389,7 +383,7 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
 
   // per colonna: il cambio di colore più netto tra metà cappuccio e poco sotto la riga
   const ys = Math.round(top + (end - top) * 0.5)
-  const ye = Math.min(H - 4, Math.round(Math.max(end, sy) + 0.05 * H))
+  const ye = Math.min(H - 4, Math.round(end + 0.03 * H))
   const n = x1 - x0 + 1
   const raw = new Float32Array(n).fill(NaN)
   const k = 3
