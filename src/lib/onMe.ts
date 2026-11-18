@@ -298,22 +298,34 @@ function layerExtent(url: string): Promise<Extent> {
       let top = -1
       const rowL = new Int16Array(H).fill(-1)
       const rowR = new Int16Array(H).fill(-1)
+      // la regola per righe ignora i pezzi stretti (ganci, lacci, punte): non devono restringere
+      // quello che si vede sotto, es. l'orlo della maglia sotto i ganci di una giacca
+      const thin = Math.max(2, Math.round(W * 0.03))
       for (let y = 0; y < H; y++) {
+        // l, r: tutto il capo (serve al cappuccio); wl, wr: senza i pezzi stretti (serve al ritaglio)
         let l = -1
         let r = -1
-        for (let x = 0; x < W; x++) {
-          if (d[(y * W + x) * 4 + 3] > 100) {
+        let wl = -1
+        let wr = -1
+        let run = 0
+        for (let x = 0; x <= W; x++) {
+          if (x < W && d[(y * W + x) * 4 + 3] > 100) {
+            run++
             if (l < 0) l = x
             r = x
+          } else {
+            if (run >= thin) {
+              if (wl < 0) wl = x - run
+              wr = x - 1
+            }
+            run = 0
           }
         }
         rowL[y] = l
         rowR[y] = r
-        if (l < 0) ctx.fillRect(0, y, W, 1)
-        else {
-          ctx.fillRect(l - m, y, r - l + 1 + 2 * m, 1)
-          if (top < 0) top = y
-        }
+        if (l >= 0 && top < 0) top = y
+        if (wl < 0) ctx.fillRect(0, y, W, 1)
+        else ctx.fillRect(wl - m, y, wr - wl + 1 + 2 * m, 1)
       }
       // e per colonne: dove c'è il capo, sotto non si vede niente sopra il suo bordo più alto (le
       // spalle oblique di una giacca lasciano dei vuoti nelle righe, ma non nelle colonne)
