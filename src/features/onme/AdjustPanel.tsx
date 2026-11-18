@@ -10,12 +10,12 @@ type Slider = { key: keyof LayerAdjust; label: string; min: number; max: number;
 const pct = (v: number) => `${Math.round(v * 100)}%`
 const shift = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 1000) / 10}`
 
-/** Tutto il capo: grandezza e lunghezza ±15%, spostamento su/giù ±8%, di lato ±5%. */
+/** Tutto il capo: grandezza e lunghezza ±15%, spostamento su/giù ±12%, di lato ±15% (basta anche per un livello importato storto). */
 const WHOLE: Slider[] = [
   { key: 'scale', label: 'Grandezza', min: 0.85, max: 1.15, step: 0.005, show: pct },
   { key: 'stretch', label: 'Lunghezza', min: 0.85, max: 1.15, step: 0.005, show: pct },
-  { key: 'dy', label: 'Su / giù', min: -0.08, max: 0.08, step: 0.002, show: shift },
-  { key: 'dx', label: 'Sinistra / destra', min: -0.05, max: 0.05, step: 0.002, show: shift },
+  { key: 'dy', label: 'Su / giù', min: -0.12, max: 0.12, step: 0.002, show: shift },
+  { key: 'dx', label: 'Sinistra / destra', min: -0.15, max: 0.15, step: 0.002, show: shift },
 ]
 
 const deg = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v)}°`

@@ -141,6 +141,25 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     dragX.set(0)
   }, [activeId, activeZone, activeLayer, onMeView, dragX])
 
+  // rete di sicurezza: su iPhone a volte il gesto finisce senza l'ultimo evento e il capo resterebbe
+  // spostato di lato. Dopo ogni tocco, se non si sta trascinando, torna al suo posto.
+  const dragging = useRef(false)
+  useEffect(() => {
+    let timer = 0
+    const settle = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        if (!dragging.current && dragX.get() !== 0) animate(dragX, 0, { type: 'spring', stiffness: 300, damping: 30 })
+      }, 350)
+    }
+    const events = ['pointerup', 'pointercancel', 'touchend', 'touchcancel'] as const
+    for (const e of events) window.addEventListener(e, settle, { passive: true })
+    return () => {
+      window.clearTimeout(timer)
+      for (const e of events) window.removeEventListener(e, settle)
+    }
+  }, [dragX])
+
   const prevId = neighbor(state, garments, -1)
   const nextId = neighbor(state, garments, 1)
   const step = (d: 1 | -1) => {
@@ -150,8 +169,10 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
 
   const bind = useGesture(
     {
-      onDrag: ({ movement: [mx], last, tap, event, velocity: [vx], canceled }) => {
+      onDrag: ({ movement: [mx], last, tap, event, velocity: [vx], canceled, active }) => {
+        dragging.current = active && !canceled
         if (tap) {
+          dragX.set(0)
           const r = stage.current!.getBoundingClientRect()
           onSelectZone(zoneAt((event as PointerEvent).clientY - r.top))
           return
