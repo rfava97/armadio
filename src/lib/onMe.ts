@@ -19,7 +19,8 @@ const BG_RGB = [0xf3, 0xf1, 0xec]
 /** differenza di colore (0..441) oltre cui un pixel è cambiato */
 const THRESHOLD = 28
 
-export type OnMeCategory = 'tops' | 'bottoms'
+/** tops/bottoms: con FASHN o Gemini; shoes: solo con Gemini (FASHN non veste le scarpe) */
+export type OnMeCategory = 'tops' | 'bottoms' | 'shoes'
 
 /** Foto del corpo su fondo pieno con il margine, come la riceve il modello. */
 async function flattenBody(src: string): Promise<{ canvas: HTMLCanvasElement; pad: number; height: number }> {
@@ -181,7 +182,7 @@ export function extractLayer(
 export async function makeOnMeLayer(
   bodyUrl: string,
   garmentUrl: string,
-  category: OnMeCategory,
+  category: Exclude<OnMeCategory, 'shoes'>,
   /** capo fotografato indossato da qualcuno: il modello ne copia vestibilità e chiusura */
   worn = false,
   /** linea vita/fianchi in frazione dell'altezza della foto del corpo */

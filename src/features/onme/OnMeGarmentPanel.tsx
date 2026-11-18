@@ -36,7 +36,25 @@ export function OnMeGarmentPanel({ garment }: { garment: Garment }) {
   const queue = useOnMeQueue()
   const create = useCreateWear()
   const [adding, setAdding] = useState<string | null>(null)
-  if (!onMeCategory(garment.category)) return null
+  const kind = onMeCategory(garment.category)
+  if (!kind) return null
+  // scarpe: un solo modo, solo con Gemini (sagoma con le scarpe ai piedi)
+  if (kind === 'shoes') {
+    const first = wearsMap?.get(garment.id)?.[0]
+    return (
+      <section className="flex flex-col gap-3" aria-label="Su di te">
+        <div className="flex flex-col gap-1">
+          <span className="text-label font-medium text-fg-muted">Su di te</span>
+          <span className="text-caption text-fg-muted">
+            Le scarpe si vedono su di te con Gemini: mandi la tua sagoma verde e la foto delle scarpe, lui le mette ai piedi, l'app
+            le allinea.
+          </span>
+        </div>
+        {error && <p className="text-caption text-danger">{error.message}</p>}
+        {wearsMap && <WearCard garment={garment} wear={first} shoes />}
+      </section>
+    )
+  }
 
   const wears = wearsMap?.get(garment.id) ?? []
   const names = new Set(wears.map((w) => w.name.toLowerCase()))
@@ -97,7 +115,7 @@ export function OnMeGarmentPanel({ garment }: { garment: Garment }) {
 }
 
 /** Un modo di indossare il capo; senza `wear` è il modo "Base" non ancora creato. */
-function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
+function WearCard({ garment, wear, shoes = false }: { garment: Garment; wear?: Wear; shoes?: boolean }) {
   const queue = useOnMeQueue()
   const { bodyPath, start } = useOnMeStarter()
   const { data: profile } = useProfile()
@@ -147,7 +165,7 @@ function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
   else if (queued) status = 'In coda.'
   else if (ready) status = changed ? 'Rifallo con la nuova foto.' : 'Pronto su di te.'
   else if (stale) status = 'Da rifare: hai cambiato la tua foto.'
-  else status = 'Non ancora su di te.'
+  else status = shoes ? 'Non ancora su di te: Sagoma, poi Importa.' : 'Non ancora su di te.'
 
   return (
     <div className="flex flex-col gap-3 rounded-card border border-border p-4">
@@ -166,72 +184,77 @@ function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
         )}
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-input bg-garment-bg">
-          {wear?.fit_photo_path ? (
-            fitUrl ? <img src={fitUrl} alt={`Foto indossata: ${name}`} className="h-full w-full object-cover" /> : <Spinner className="size-4 text-accent" />
-          ) : (
-            <ImagePlus className="size-5 text-fg-muted" aria-hidden />
+      {/* foto indossata (per FASHN): le scarpe non ne hanno bisogno */}
+      {!shoes && (
+        <>
+          <div className="flex items-center gap-3">
+            <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-input bg-garment-bg">
+              {wear?.fit_photo_path ? (
+                fitUrl ? <img src={fitUrl} alt={`Foto indossata: ${name}`} className="h-full w-full object-cover" /> : <Spinner className="size-4 text-accent" />
+              ) : (
+                <ImagePlus className="size-5 text-fg-muted" aria-hidden />
+              )}
+            </div>
+            <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
+              <Button variant="secondary" size="md" className="h-9 px-2" disabled={setFit.isPending} onClick={() => input.current?.click()}>
+                {setFit.isPending ? <Spinner /> : <ImagePlus className="size-4" aria-hidden />}
+                {wear?.fit_photo_path ? 'Cambia' : 'Foto'}
+              </Button>
+              <a
+                href="https://gemini.google.com/app"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => {
+                  navigator.clipboard
+                    ?.writeText(geminiFitPrompt(garment, name === 'Base' ? '' : name, profile?.height_cm))
+                    .then(() => setCopied(true))
+                    .catch(() => undefined)
+                }}
+                className="flex h-9 items-center justify-center gap-1.5 rounded-full border border-border bg-surface px-2 text-caption font-semibold"
+              >
+                <ExternalLink className="size-4 text-accent" aria-hidden />
+                Gemini
+              </a>
+            </div>
+          </div>
+          {copied && (
+            <p className="text-caption text-fg-muted">
+              Prompt copiato: in Gemini allega la foto del capo e incollalo, poi salva il risultato e aggiungilo con "Foto".
+            </p>
           )}
-        </div>
-        <div className="grid min-w-0 flex-1 grid-cols-2 gap-2">
-          <Button variant="secondary" size="md" className="h-9 px-2" disabled={setFit.isPending} onClick={() => input.current?.click()}>
-            {setFit.isPending ? <Spinner /> : <ImagePlus className="size-4" aria-hidden />}
-            {wear?.fit_photo_path ? 'Cambia' : 'Foto'}
-          </Button>
-          <a
-            href="https://gemini.google.com/app"
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => {
-              navigator.clipboard
-                ?.writeText(geminiFitPrompt(garment, name === 'Base' ? '' : name, profile?.height_cm))
-                .then(() => setCopied(true))
-                .catch(() => undefined)
+          {wear?.fit_photo_path && (
+            <button
+              type="button"
+              className="self-start text-caption font-semibold text-danger"
+              disabled={setFit.isPending}
+              onClick={() => setFit.mutate({ garment, wear, file: null }, { onSuccess: () => setChanged(true) })}
+            >
+              Togli la foto indossata
+            </button>
+          )}
+          <input
+            ref={input}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) setFit.mutate({ garment, wear, file: f }, { onSuccess: () => setChanged(true) })
             }}
-            className="flex h-9 items-center justify-center gap-1.5 rounded-full border border-border bg-surface px-2 text-caption font-semibold"
-          >
-            <ExternalLink className="size-4 text-accent" aria-hidden />
-            Gemini
-          </a>
-        </div>
-      </div>
-      {copied && (
-        <p className="text-caption text-fg-muted">
-          Prompt copiato: in Gemini allega la foto del capo e incollalo, poi salva il risultato e aggiungilo con "Foto".
-        </p>
+          />
+        </>
       )}
-      {wear?.fit_photo_path && (
-        <button
-          type="button"
-          className="self-start text-caption font-semibold text-danger"
-          disabled={setFit.isPending}
-          onClick={() => setFit.mutate({ garment, wear, file: null }, { onSuccess: () => setChanged(true) })}
-        >
-          Togli la foto indossata
-        </button>
-      )}
-      <input
-        ref={input}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0]
-          e.target.value = ''
-          if (f) setFit.mutate({ garment, wear, file: f }, { onSuccess: () => setChanged(true) })
-        }}
-      />
       {(setFit.error || del.error) && <p className="text-caption text-danger">{(setFit.error ?? del.error)?.message}</p>}
 
-      {/* alternativa a FASHN (anche a quota finita): Gemini disegna il capo sulla tua sagoma */}
+      {/* Gemini disegna il capo sulla tua sagoma (il modo principale; FASHN resta come alternativa) */}
       {bodyPath && (
-        <details className="rounded-input bg-surface-muted px-3 py-2">
-          <summary className="cursor-pointer text-caption font-semibold">Esperimento: su di te con Gemini</summary>
+        <details className="rounded-input bg-surface-muted px-3 py-2" open>
+          <summary className="cursor-pointer text-caption font-semibold">Su di te con Gemini</summary>
           <div className="flex flex-col gap-2 pt-2">
             <p className="text-caption text-fg-muted">
-              Senza FASHN. A Gemini mandi la tua sagoma (una figura verde, non la tua foto) e il capo; lui disegna solo il capo
-              indossato, l'app lo allinea e lo usa come "su di te".
+              A Gemini mandi la tua sagoma (una figura verde, non la tua foto) e {shoes ? 'le scarpe' : 'il capo'}; lui
+              {shoes ? ' le mette ai piedi' : ' disegna solo il capo indossato'}, l'app allinea il risultato e lo usa come "su di te".
             </p>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="secondary" size="md" className="h-9 px-2" onClick={shareShape} disabled={sharing || !photo.data}>
@@ -276,7 +299,7 @@ function WearCard({ garment, wear }: { garment: Garment; wear?: Wear }) {
           ) : null}
           {status}
         </p>
-        {start && !working && !queued && (
+        {start && !shoes && !working && !queued && (
           <Button
             size="md"
             variant={ready && !changed ? 'secondary' : 'primary'}

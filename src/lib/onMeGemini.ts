@@ -55,6 +55,7 @@ export async function makeSilhouette(bodyUrl: string): Promise<Frame> {
  * abbondare, salvo per i modi larghi.
  */
 export function geminiShapePrompt(kind: string, howIt: string, category = 'maglie'): string {
+  if (category === 'scarpe') return geminiShoesPrompt()
   const style = parseWear(howIt)
   const bottom = category === 'pantaloni' || category === 'jeans'
   const relaxed = style.oversize || style.baggy
@@ -74,6 +75,22 @@ export function geminiShapePrompt(kind: string, howIt: string, category = 'magli
     }. ${ends.charAt(0).toUpperCase() + ends.slice(1)}.`,
     `Wherever the garment does not cover the mannequin (head, neck, inside of the collar, open front, hands, legs) keep the mannequin exactly the same flat green as in image 1.${open} Do not draw a person, skin, face, hands or shadows on the mannequin.`,
     'Reproduce the garment exactly: colour, fabric, texture, logos, prints, zips, buttons and details. The inside of the garment (lining, back of the collar) may be visible where it naturally would.',
+    'Do not move, resize or crop the mannequin: same canvas size, framing and position as image 1. Plain white background, no shadows.',
+    'Output: one single image.',
+  ].join('\n\n')
+}
+
+/**
+ * Scarpe: la foto del paio è spesso di lato o dall'alto, ma sui piedi del manichino vanno viste di
+ * fronte come indossate. Il resto del manichino resta verde e identico.
+ */
+function geminiShoesPrompt(): string {
+  return [
+    'Image 1 is a flat green mannequin silhouette seen from the front, on a white background. Image 2 is a pair of shoes.',
+    'Put ONLY these shoes on the feet of the green mannequin, one shoe on each foot, seen from the front exactly as they look when worn while standing, at the real size for these feet.',
+    'Keep the same pose, legs, ankles and feet position as in image 1: each shoe sits exactly where the foot is.',
+    'Everything that is not a shoe (head, body, arms, legs, ankles) stays exactly the same flat green as in image 1. Do not add clothes, socks, skin, a person or shadows on the mannequin.',
+    'Reproduce the shoes exactly: colour, material, texture, sole, laces, logos and details, turned to the front view.',
     'Do not move, resize or crop the mannequin: same canvas size, framing and position as image 1. Plain white background, no shadows.',
     'Output: one single image.',
   ].join('\n\n')
@@ -119,7 +136,7 @@ const maskOf = (c: HTMLCanvasElement, test: (d: Uint8ClampedArray, i: number) =>
 /**
  * Dall'immagine di Gemini al livello "Su di me": sfondo tolto, capo allineato alla sagoma
  * (piccole correzioni di scala e posizione) nella zona del capo.
- * split: linea busto/gambe in frazione dell'altezza della foto del corpo.
+ * split: linea busto/gambe (per le scarpe: le caviglie) in frazione dell'altezza della foto del corpo.
  */
 export async function importGeminiShape(
   file: Blob,
@@ -165,7 +182,8 @@ export async function importGeminiShape(
   const F = maskOf(small(figure), (d, i) => d[i + 3] > 128)
   // la zona del capo pesa di più: è lì che l'allineamento deve essere preciso
   const splitRow = Math.round(splitFrac * sh)
-  const weight = (y: number) => ((category === 'tops' ? y < splitRow + sh * 0.05 : y >= splitRow - sh * 0.02) ? 2 : 1)
+  const weight = (y: number) =>
+    (category === 'tops' ? y < splitRow + sh * 0.05 : category === 'shoes' ? y >= splitRow - sh * 0.06 : y >= splitRow - sh * 0.02) ? 2 : 1
   const cx = sw / 2
   const cy = sh / 2
   let best = { score: -1, s: 1, dx: 0, dy: 0 }
@@ -222,6 +240,11 @@ export async function importGeminiShape(
     if (!near) continue
     const m = Math.max(d[i * 4], d[i * 4 + 2])
     if (d[i * 4 + 1] > m) d[i * 4 + 1] = m
+  }
+  // scarpe: solo sotto le caviglie (sopra, se Gemini ha cambiato qualcosa, non è la scarpa)
+  if (category === 'shoes') {
+    const top = Math.round((splitFrac - 0.03) * H)
+    for (let i = 0; i < top * W; i++) d[i * 4 + 3] = 0
   }
   lctx.putImageData(img, 0, 0)
   // via i puntini rimasti: restano le parti del capo (anche separate, come i due lati di una giacca aperta)

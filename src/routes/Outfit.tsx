@@ -16,6 +16,7 @@ import {
   chosenWear,
   isWearReady,
   onMeCategory,
+  fashnCan,
   friendlyError,
   targetKey,
   useAdjustLayer,
@@ -107,11 +108,14 @@ export default function Outfit() {
 
   // capi del busto e delle gambe: quelli che si possono vedere su di te
   const worn = state
-    ? [...state.outfit.busto, state.outfit.gambe]
+    ? [...state.outfit.busto, state.outfit.gambe, state.outfit.piedi]
         .map((id) => (id ? byId.get(id) : undefined))
         .filter((g): g is GarmentWithThumb => !!g && !!onMeCategory(g.category))
     : []
-  const missing: OnMeTarget[] = worn.filter((g) => !isWearReady(wearOf(g), bodyPath)).map((g) => ({ garment: g, wear: wearOf(g) }))
+  // da preparare con "Prepara" (FASHN): le scarpe no, si fanno con Gemini dal dettaglio capo
+  const missing: OnMeTarget[] = worn
+    .filter((g) => fashnCan(g.category) && !isWearReady(wearOf(g), bodyPath))
+    .map((g) => ({ garment: g, wear: wearOf(g) }))
   // livello di ogni capo (id capo → URL) e foto indossata del modo scelto
   const wornWears = worn.map((g) => {
     const w = wearOf(g)
@@ -381,6 +385,7 @@ export default function Outfit() {
               onClose={() => setSaving(false)}
               bodyUrl={onMe.url}
               layers={[
+                ...(state.outfit.piedi && garmentLayers.get(state.outfit.piedi) ? [garmentLayers.get(state.outfit.piedi)!] : []),
                 ...(state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? [garmentLayers.get(state.outfit.gambe)!] : []),
                 ...state.outfit.busto
                   .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
@@ -388,7 +393,10 @@ export default function Outfit() {
                   .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
                   .map((x) => garmentLayers.get(x.g.id)!),
               ]}
-              topsFrom={state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0}
+              topsFrom={
+                (state.outfit.piedi && garmentLayers.get(state.outfit.piedi) ? 1 : 0) +
+                (state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0)
+              }
               shoulderY={onMe.shoulderY}
               state={state}
             />
@@ -468,8 +476,10 @@ function OnMeStatus({
   const label = (g: GarmentWithThumb, w?: Wear) => (w && w.name !== 'Base' ? `${g.name} (${w.name.toLowerCase()})` : g.name)
   let text: string
   let action: { label: string; items: OnMeTarget[] } | null = null
-  if (zone === 'piedi') {
-    text = 'Su di te restano le scarpe della foto: quelle scelte sono nel riquadro.'
+  if (zone === 'piedi' && !active) {
+    text = 'Nessuna scarpa scelta: su di te restano i piedi della foto.'
+  } else if (active && onMeCategory(active.category) === 'shoes' && !isWearReady(activeWear, bodyPath)) {
+    text = 'Scarpe non ancora su di te (sono nel riquadro): nel dettaglio, Sagoma e Importa con Gemini.'
   } else if (active && !onMeCategory(active.category)) {
     text = 'Questo capo non si vede su di te: è nel riquadro.'
   } else if (active && !isWearReady(activeWear, bodyPath)) {
@@ -486,7 +496,7 @@ function OnMeStatus({
   } else {
     text = queue.running ? 'Preparo altri capi in sottofondo…' : 'Scorri per cambiare capo.'
     // il capo attivo è pronto ma non convince: si può rigenerare
-    if (active && !queue.running) action = { label: 'Rifai', items: [{ garment: active, wear: activeWear }] }
+    if (active && fashnCan(active.category) && !queue.running) action = { label: 'Rifai', items: [{ garment: active, wear: activeWear }] }
   }
   // dopo un errore (quota finita, rete…) lo mostro al posto del testo, con "Riprova"
   if (queue.error && !queue.running) {

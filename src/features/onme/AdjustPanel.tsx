@@ -77,7 +77,11 @@ export function AdjustPanel({
   saving: boolean
   error: string | null
 }) {
-  const tabs: Tab[] = [{ key: 'whole', label: 'Insieme', sliders: WHOLE }, ...(category === 'tops' ? TOP_PARTS : BOTTOM_PARTS)]
+  // scarpe: solo l'insieme (grandezza e posizione)
+  const tabs: Tab[] = [
+    { key: 'whole', label: 'Insieme', sliders: WHOLE },
+    ...(category === 'tops' ? TOP_PARTS : category === 'bottoms' ? BOTTOM_PARTS : []),
+  ]
   const [tab, setTab] = useState('whole')
   const sliders = (tabs.find((t) => t.key === tab) ?? tabs[0]).sliders
   const changed = (Object.keys(NO_ADJUST) as (keyof LayerAdjust)[]).some((k) => value[k] !== NO_ADJUST[k])
@@ -95,20 +99,22 @@ export function AdjustPanel({
           Azzera
         </button>
       </div>
-      <div className="flex rounded-full bg-surface-muted p-0.5" role="tablist">
-        {tabs.map(({ key: k, label }) => (
-          <button
-            key={k}
-            type="button"
-            role="tab"
-            aria-selected={tab === k}
-            onClick={() => setTab(k)}
-            className={cn('h-8 flex-1 rounded-full text-caption font-semibold', tab === k ? 'bg-navy text-on-accent' : 'text-fg')}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      {tabs.length > 1 && (
+        <div className="flex rounded-full bg-surface-muted p-0.5" role="tablist">
+          {tabs.map(({ key: k, label }) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={tab === k}
+              onClick={() => setTab(k)}
+              className={cn('h-8 flex-1 rounded-full text-caption font-semibold', tab === k ? 'bg-navy text-on-accent' : 'text-fg')}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
       {sliders.map((s) => (
         <label key={s.key} className="grid grid-cols-[6.75rem_minmax(0,1fr)_2.75rem] items-center gap-2 text-caption">
           <span className="text-fg-muted">{s.label}</span>

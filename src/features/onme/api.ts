@@ -18,11 +18,18 @@ const SIGNED_TTL = 60 * 60
 const TOPS: Category[] = ['maglie', 'camicie', 'canotte', 'felpe_maglioni', 'giacche_cappotti']
 const BOTTOMS: Category[] = ['pantaloni', 'jeans']
 
-/** Solo busto e gambe si possono vedere "su di me" (il modello non veste scarpe e accessori). */
+/** Busto, gambe e scarpe si possono vedere "su di me" (gli accessori no). */
 export function onMeCategory(c: Category): OnMeCategory | null {
   if (TOPS.includes(c)) return 'tops'
   if (BOTTOMS.includes(c)) return 'bottoms'
+  if (c === 'scarpe') return 'shoes'
   return null
+}
+
+/** Capi che FASHN sa preparare (le scarpe solo con Gemini). */
+export const fashnCan = (c: Category) => {
+  const k = onMeCategory(c)
+  return k === 'tops' || k === 'bottoms'
 }
 
 /* ---------- modi di indossare un capo (tabella garment_wears, migrazione 006) ---------- */
@@ -111,6 +118,8 @@ type Body = { path: string; url: string; anchors?: Anchors | null }
 
 /** Linea tra busto e gambe sulla foto: poco sopra i fianchi, dove di solito c'è l'elastico. */
 const splitOf = (a?: Anchors | null) => (a ? a.waist.y + (a.hips.y - a.waist.y) * 0.6 : 0.5)
+/** Caviglie sulla foto: da qui in giù ci sono le scarpe. */
+const anklesOf = (a?: Anchors | null) => (a ? (a.ankle_l.y + a.ankle_r.y) / 2 : 0.9)
 
 /** Salva un livello "su di me" sul modo e toglie quello vecchio. */
 async function storeLayer(g: Garment, w: Wear, layer: HTMLCanvasElement, bodyPath: string, userId: string) {
@@ -132,6 +141,7 @@ async function storeLayer(g: Garment, w: Wear, layer: HTMLCanvasElement, bodyPat
 async function prepareOne(g: Garment, w: Wear, body: Body, userId: string) {
   const category = onMeCategory(g.category)
   if (!category) throw new Error('Questo capo non si può vedere su di te.')
+  if (category === 'shoes') throw Object.assign(new Error('Le scarpe si preparano con Gemini (Sagoma e Importa).'), { userFacing: true })
   // con la foto indossata il modello copia vestibilità e chiusura; altrimenti usa la foto stesa
   const { layer } = await makeOnMeLayer(
     body.url,
@@ -181,7 +191,8 @@ export const useOnMeQueue = () =>
 /** Aggiunge modi alla coda e la avvia se è ferma. */
 export function prepareOnMe(items: OnMeTarget[], ctx: { body: Body; userId: string; qc: QueryClient }) {
   const add: string[] = []
-  for (const t of items) {
+  // le scarpe FASHN non le sa fare: si preparano solo con Gemini
+  for (const t of items.filter((x) => fashnCan(x.garment.category))) {
     const k = targetKey(t)
     targets.set(k, t)
     if (k !== queue.current && !queue.pending.includes(k) && !add.includes(k)) add.push(k)
@@ -315,7 +326,9 @@ export function useImportGeminiShape() {
     mutationFn: async ({ garment, wear, file }: { garment: Garment; wear?: Wear; file: Blob }) => {
       const category = onMeCategory(garment.category)
       if (!category || !bodyPath || !photo.data || !session) throw new Error('Serve una tua foto nel Profilo.')
-      const layer = await importGeminiShape(file, photo.data, category, splitOf(profile?.body_anchors), (c) => removeBackground(c))
+      const anchors = profile?.body_anchors
+      const split = category === 'shoes' ? anklesOf(anchors) : splitOf(anchors)
+      const layer = await importGeminiShape(file, photo.data, category, split, (c) => removeBackground(c))
       const w = wear ?? (await createWear(garment.id, 'Base'))
       await storeLayer(garment, w, layer, bodyPath, session.user.id)
     },

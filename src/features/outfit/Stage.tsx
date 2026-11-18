@@ -242,7 +242,10 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     // il livello copre la foto allargata del margine usato nella generazione
     const pad = ON_ME_PAD * Math.max(av.width, av.height)
     const box = { left: av.left - pad, top: av.top - pad, width: av.width + pad * 2, height: av.height + pad * 2 }
-    // pantaloni sotto, poi gli strati del busto dal più interno; le scarpe restano quelle della foto
+    // scarpe, pantaloni, poi gli strati del busto dal più interno
+    // scarpe sotto i pantaloni: un pantalone largo ci ricade sopra
+    const pl = piedi && onMe.layers.get(piedi.id)
+    if (piedi && pl) items.push({ key: 'piedi', g: piedi, zone: 'piedi', layer: 0, box, z: 5, src: pl })
     const gl = gambe && onMe.layers.get(gambe.id)
     if (gambe && gl) items.push({ key: 'gambe', g: gambe, zone: 'gambe', layer: 0, box, z: 10, src: gl })
     busto.forEach(({ g, i }, n) => {

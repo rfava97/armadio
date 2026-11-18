@@ -2,7 +2,7 @@ import { Sparkles, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useGarments } from '@/features/garments/api'
-import { isWearReady, onMeCategory, stopOnMe, useOnMeQueue, useOnMeStarter, useWears, type OnMeTarget } from './api'
+import { fashnCan, isWearReady, stopOnMe, useOnMeQueue, useOnMeStarter, useWears, type OnMeTarget } from './api'
 
 /** Profilo → Camerino: quanti capi sono pronti "su di me" e la preparazione di quelli mancanti. */
 export function OnMeCard() {
@@ -11,7 +11,8 @@ export function OnMeCard() {
   const { bodyPath, start: starter } = useOnMeStarter()
   const { data: wears, error: wearsError } = useWears()
 
-  const eligible = (garments ?? []).filter((g) => onMeCategory(g.category))
+  // le scarpe si fanno con Gemini, dal dettaglio capo: qui solo quelli che FASHN sa preparare
+  const eligible = (garments ?? []).filter((g) => fashnCan(g.category))
   // un capo è pronto se almeno uno dei suoi modi di indossarlo lo è
   const ready = eligible.filter((g) => (wears?.get(g.id) ?? []).some((w) => isWearReady(w, bodyPath)))
   // da preparare: ogni modo non pronto, e i capi che non ne hanno ancora nessuno
