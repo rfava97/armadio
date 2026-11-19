@@ -713,8 +713,9 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
   const overlap = HOOD_OVERLAP * H
   // l'orlo del cappuccio è una curva morbida: il bordo dei capi sopra (ciuffi di una pelliccia,
   // cuciture) viene ammorbidito su una fascia larga (mediana, poi media)
-  if (kind === 'hood') {
-    const r = Math.max(2, Math.round(0.03 * W))
+  // il colletto ne segue il bordo su una fascia più stretta: niente scalini dove lo scollo scende ripido
+  {
+    const r = Math.max(2, Math.round((kind === 'hood' ? 0.03 : 0.012) * W))
     const win = (src: Float32Array, f: (v: number[]) => number) =>
       Float32Array.from(src, (v, x) => {
         if (v < 0) return -1
@@ -748,6 +749,27 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       // girocollo) non resta un buco con la pelle
       const inNeck = neck && x >= neck[0] && x <= neck[1] && !piped?.[x - x0]
       end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(Math.max(own, t + 0.012 * H), t + 0.03 * H) : own
+    }
+  }
+  if (kind === 'collar' && neck) {
+    // le estremità del colletto si chiudono sul bordo dei capi sopra con una curva, non con un taglio
+    // dritto: nelle colonne del collo vicine alla fine del colletto (2,5% della larghezza) scende sempre meno
+    const n = end.length
+    // distanza dalla colonna senza colletto più vicina (o dal bordo)
+    const dist = new Float32Array(n)
+    let d = 0
+    for (let i = 0; i < n; i++) dist[i] = d = end[i] < 0 ? 0 : d + 1
+    d = 0
+    for (let i = n - 1; i >= 0; i--) {
+      d = end[i] < 0 ? 0 : d + 1
+      dist[i] = Math.min(dist[i], d)
+    }
+    for (let i = 0; i < n; i++) {
+      const x = i + xs
+      const t = outerTop[x]
+      if (end[i] < 0 || t < 0 || end[i] <= t || x < neck[0] || x > neck[1] || piped?.[x - x0]) continue
+      const k = Math.min(1, dist[i] / Math.max(1, 0.025 * W))
+      end[i] = t + (end[i] - t) * k * k * (3 - 2 * k)
     }
   }
   // a piena risoluzione: colonne interpolate, bordo di 2 px
