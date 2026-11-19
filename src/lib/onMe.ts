@@ -584,6 +584,23 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
   base = Math.min(base, top + Math.round(0.04 * H))
   const ye = Math.min(H - 4, top + Math.round(0.09 * H))
   const at = (x: number, y: number) => (y * W + x) * 4
+  const light = (i: number) => {
+    const mx = Math.max(d[i], d[i + 1], d[i + 2])
+    const mn = Math.min(d[i], d[i + 1], d[i + 2])
+    return mn > 130 && mx - mn < 70
+  }
+  // il bordino si riconosce solo se fa contrasto: in un capo chiaro (una polo bianca) è chiaro tutto,
+  // e il colletto resta quello del collo, senza punte
+  let opaque = 0
+  let pale = 0
+  for (let y = Math.min(H - 1, top + Math.round(0.1 * H)); y <= Math.min(H - 1, top + Math.round(0.16 * H)); y += 2)
+    for (let x = x0; x <= x1; x += 2) {
+      const i = at(x, y)
+      if (d[i + 3] < 200) continue
+      opaque++
+      if (light(i)) pale++
+    }
+  const contrast = opaque > 0 && pale / opaque < 0.4
   const raw = new Float32Array(c1 - c0 + 1).fill(-1)
   const piped = new Uint8Array(c1 - c0 + 1)
   for (let x = c0; x <= c1; x++) {
@@ -592,12 +609,9 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
     let colTop = top
     while (colTop < ye && d[at(x, colTop) + 3] < 200) colTop++
     let low = -1
-    for (let y = colTop; y <= Math.min(ye, colTop + 0.08 * H); y++) {
+    for (let y = colTop; contrast && y <= Math.min(ye, colTop + 0.08 * H); y++) {
       const i = at(x, y)
-      if (d[i + 3] < 200) continue
-      const mx = Math.max(d[i], d[i + 1], d[i + 2])
-      const mn = Math.min(d[i], d[i + 1], d[i + 2])
-      if (mn > 130 && mx - mn < 70) low = y
+      if (d[i + 3] >= 200 && light(i)) low = y
     }
     // nelle colonne del collo il colletto arriva almeno alla sua base, e fino al bordino se scende
     // (il bavero aperto); di lato c'è solo dove c'è il bordino (le punte)
@@ -777,7 +791,7 @@ export async function coverMask(above: string[], inside = false, self?: string):
     for (let x = 0; x < W; x++) {
       if (hem[x] < 0) continue
       const b = own.colBottom[Math.min(own.colBottom.length - 1, Math.floor(x * k))] / k
-      if (b > hem[x] && b - hem[x] < 0.012 * H) limit[x] = hem[x] + 1
+      if (b > hem[x] && b - hem[x] < 0.02 * H) limit[x] = hem[x] + 1
     }
   }
   if (inside || self) {
