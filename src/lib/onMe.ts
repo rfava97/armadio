@@ -453,6 +453,8 @@ type HoodShape = {
   piped?: Uint8Array
   /** colletto morbido (polo): tra le punte si rimette la foto del collo */
   soft?: boolean
+  /** bordo alto per colonna (come bottom; senza, la cima): l'ala di una camicia sale in diagonale */
+  upper?: Float32Array
 }
 
 async function hoodShape(url: string, shoulder: number): Promise<HoodShape | null> {
@@ -632,6 +634,11 @@ function collarShape(
   // capo chiaro con le righe scure sul colletto (polo): le punte arrivano fino alle righe
   if (!contrast) {
     const shape = tippedCollar(d, W, H, top, x0, x1, c0, c1)
+    if (shape) return shape
+  }
+  // colletto senza bordino né righe con lo scollo a V o aperto (camicia): la forma tipica delle ali
+  {
+    const shape = shirtCollar(d, W, H, top, x0, x1, c0, c1)
     if (shape) return shape
   }
   const raw = new Float32Array(c1 - c0 + 1).fill(-1)
@@ -889,6 +896,60 @@ function tippedCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x
   return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped, soft: true }
 }
 
+/**
+ * Colletto di camicia (senza bordino né righe che lo distinguano, es. nero su nero): la forma tipica
+ * delle ali, misurata sui colletti segnati a mano. Per lato, dal bordo dello scollo in cima: l'ala va
+ * in fuori del 4% della larghezza, con l'angolo in basso al 5,5% dell'altezza sotto la cima; il bordo
+ * basso risale verso il collo (4,3% al bordo dello scollo) e poi scende alla punta davanti: con lo
+ * scollo a V alla punta della V al centro, con la camicia aperta fino al 6,4% poco oltre il bordo.
+ * Solo se davanti c'è una V o un'apertura (lo scollo al centro scende almeno il 3,5% sotto la cima):
+ * un dolcevita no. null altrimenti.
+ */
+function shirtCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x0: number, x1: number, c0: number, c1: number): HoodShape | null {
+  const cx = Math.round((x0 + x1) / 2)
+  const alpha = (x: number, y: number) => d[(y * W + x) * 4 + 3]
+  let vy = top
+  while (vy < H - 1 && vy < top + 0.12 * H && alpha(cx, vy) < 200) vy++
+  if (vy - top < 0.035 * H) return null
+  const open = vy >= top + 0.12 * H
+  // i bordi dello scollo poco sotto la cima
+  const yr = Math.min(H - 1, top + Math.round(0.01 * H))
+  if (alpha(cx, yr) >= 200) return null
+  let nL = cx
+  while (nL > c0 && alpha(nL - 1, yr) < 200) nL--
+  let nR = cx
+  while (nR < c1 && alpha(nR + 1, yr) < 200) nR++
+  if (nL <= c0 || nR >= c1) return null
+  const w = c1 - c0 + 1
+  const bottom = new Float32Array(w).fill(-1)
+  const out = 0.04 * W
+  const corner = top + 0.055 * H
+  const inner = top + 0.043 * H
+  const tip = open ? top + 0.064 * H : Math.max(vy, top + 0.045 * H)
+  const lerp = (a: number, b: number, t: number) => a + (b - a) * Math.min(1, Math.max(0, t))
+  for (let x = c0; x <= c1; x++) {
+    // distanza dal bordo dello scollo, verso l'esterno (>0) o verso il centro (<0), lato per lato
+    const left = x <= cx
+    const e = left ? nL - x : x - nR
+    let b: number
+    if (e > out + 0.005 * W) continue
+    else if (e > out) b = lerp(corner, top + 0.03 * H, (e - out) / (0.005 * W))
+    else if (e >= 0) b = lerp(inner, corner, e / out)
+    else if (open) b = lerp(inner, tip, -e / (0.016 * W))
+    else b = lerp(inner, tip, -e / Math.max(1, left ? cx - nL : nR - cx))
+    bottom[x - c0] = b
+  }
+  // il bordo alto dell'ala: dalla cima del colletto scende in diagonale verso l'angolo (3% dell'altezza
+  // ogni 3,5% della larghezza), così sopra l'ala non resta un pezzo di spalla
+  const upper = new Float32Array(w).fill(-1)
+  for (let x = c0; x <= c1; x++) {
+    const e = x <= cx ? nL - x : x - nR
+    if (e > 0 && bottom[x - c0] >= 0) upper[x - c0] = Math.min(bottom[x - c0] - 2, top + (0.03 * H * e) / (0.035 * W))
+  }
+  const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
+  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped, soft: true, upper }
+}
+
 /** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
 const HOOD_OVERLAP = 0.04
 
@@ -1026,9 +1087,11 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     if (end[j] < 0) return end[i] * S
     return (end[i] + (end[j] - end[i]) * (f - i)) * S
   }
-  const y0 = top * S
+  const upper = shape.upper
   for (let X = Math.floor(xs * S); X < Math.ceil((xs + end.length) * S); X++) {
     const b = at(X)
+    const u = upper ? upper[Math.min(upper.length - 1, Math.max(0, Math.round(X / S) - x0))] : -1
+    const y0 = (u >= 0 ? u : top) * S
     if (b <= y0) continue
     ctx.globalAlpha = 1
     ctx.fillRect(X, y0, 1, Math.max(0, b - 2 - y0))
