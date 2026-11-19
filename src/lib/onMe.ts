@@ -901,12 +901,27 @@ export async function coverMask(above: string[], inside = false, self?: string):
     // (o nell'apertura di una giacca, sotto il lembo); conta quanto esce sotto l'orlo vero, e si taglia
     // lì (sopra, fuori dai capi, lo nasconde già la regola per righe)
     const r = Math.round(0.05 * W)
+    const low = new Float32Array(W).fill(-1)
+    const bot = new Float32Array(W).fill(-1)
+    const out: number[] = []
     for (let x = 0; x < W; x++) {
       if (hem[x] < 0) continue
-      let low = hem[x]
-      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (hem[j] > low) low = hem[j]
-      const b = own.colBottom[Math.min(own.colBottom.length - 1, Math.floor(x * k))] / k
-      if (b > hem[x] && b - low < 0.02 * H) limit[x] = low + 1
+      let l = hem[x]
+      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (hem[j] > l) l = hem[j]
+      low[x] = l
+      const b = own.colBottom[Math.min(own.colBottom.length - 1, Math.floor(x * k))]
+      bot[x] = b < 0 ? -1 : b / k
+      // solo il busto: le maniche corte finiscono molto più su dell'orlo e non contano
+      if (bot[x] >= hem[x] - 0.05 * H) out.push(Math.max(0, bot[x] - l))
+    }
+    // la fascia che esce sotto l'orlo è tutta o niente: se lungo l'orlo esce (mediana) meno del 2,5%
+    // dell'altezza è un difetto della generazione (una striscia, o pezzi qua e là) e si nasconde tutta;
+    // altrimenti si vede intera (via solo i pezzetti di un filo, meno dell'1%)
+    out.sort((a, b) => a - b)
+    const band = out.length > 0 && out[out.length >> 1] >= 0.025 * H
+    for (let x = 0; x < W; x++) {
+      if (low[x] < 0 || bot[x] <= hem[x]) continue
+      if (!band || bot[x] - low[x] < 0.01 * H) limit[x] = low[x] + 1
     }
   }
   if (inside || self) {
@@ -932,26 +947,31 @@ function hemOf(extents: Extent[], W: number): Float32Array {
       const v = e.colBottom[Math.min(e.colBottom.length - 1, Math.floor(x * k))]
       return v < 0 ? -1 : v / k
     })
-    // giacca aperta: nelle colonne dell'apertura l'orlo non c'è (o c'è solo la punta del colletto):
-    // si prende quello dei due lembi accanto, il più basso entro il 12% della larghezza per lato
+    // un orlo più basso solo in poche colonne (un gancio, i lacci) non conta: mediana larga
+    const r = Math.max(3, Math.round(W * 0.03))
+    const median = (src: Float32Array) =>
+      Float32Array.from(src, (v, x) => {
+        if (v < 0) return -1
+        const near: number[] = []
+        for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (src[j] >= 0) near.push(src[j])
+        near.sort((p, q) => p - q)
+        return near[near.length >> 1]
+      })
+    const even = median(bottom)
+    // giacca aperta: nelle colonne dell'apertura l'orlo non c'è (o c'è solo la punta del colletto, molto
+    // più in alto): si prende quello dei due lembi accanto, il più basso entro il 12% della larghezza per
+    // lato. Dopo la mediana: i lacci sono già spariti e tra due lacci l'orlo resta quello vero.
     const R = Math.round(W * 0.12)
-    const filled = Float32Array.from(bottom, (v, x) => {
+    const filled = Float32Array.from(even, (v, x) => {
       let lf = -1
       let rt = -1
-      for (let j = Math.max(0, x - R); j < x; j++) lf = Math.max(lf, bottom[j])
-      for (let j = x + 1; j <= Math.min(W - 1, x + R); j++) rt = Math.max(rt, bottom[j])
-      if (v < 0 && (lf < 0 || rt < 0)) return -1
+      for (let j = Math.max(0, x - R); j < x; j++) lf = Math.max(lf, even[j])
+      for (let j = x + 1; j <= Math.min(W - 1, x + R); j++) rt = Math.max(rt, even[j])
+      if (lf < 0 || rt < 0) return v
       return Math.max(v, Math.min(lf, rt))
     })
-    // un orlo più basso solo in poche colonne (un gancio) non conta: mediana larga
-    const r = Math.max(3, Math.round(W * 0.03))
-    return Float32Array.from(filled, (v, x) => {
-      if (v < 0) return -1
-      const near: number[] = []
-      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (filled[j] >= 0) near.push(filled[j])
-      near.sort((p, q) => p - q)
-      return near[near.length >> 1]
-    })
+    // e di nuovo la mediana: l'orlo riempito resta senza scalini ai bordi dell'apertura
+    return median(filled)
   }
   const hem = new Float32Array(W).fill(-1)
   for (const e of extents) {
