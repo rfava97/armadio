@@ -232,7 +232,7 @@ export async function composeOnMe(
   for (const [n, u] of layerUrls.entries()) {
     const l = await load(u)
     const k = n - topsFrom
-    const cover = k >= 0 ? await coverMask(tops.slice(k + 1), !!inside[k]) : null
+    const cover = k >= 0 ? await coverMask(tops.slice(k + 1), !!inside[k], tops[k]) : null
     if (cover) {
       // lo strato coperto, ritagliato dove esce dai capi sopra
       const t = makeCanvas(l.width, l.height)
@@ -429,7 +429,20 @@ export function layerRow(photoY: number, photoAspect: number) {
  */
 const hoods = new Map<string, Promise<HoodShape | null>>()
 /** hood: cappuccio (appoggiato sul colletto dei capi sopra); collar: collo alto (in piedi attorno al collo, davanti al colletto) */
-type HoodShape = { W: number; H: number; top: number; x0: number; bottom: Float32Array; kind: 'hood' | 'collar' }
+type HoodShape = {
+  W: number
+  H: number
+  top: number
+  x0: number
+  bottom: Float32Array
+  kind: 'hood' | 'collar'
+  /** fine della parte stretta (cappuccio) o base del colletto */
+  endRow: number
+  /** colletto: colonne del collo (le altre sono le punte) */
+  neck?: [number, number]
+  /** colletto: colonne in cui si è trovato il bordino (lì il colletto arriva fino al bordino) */
+  piped?: Uint8Array
+}
 
 async function hoodShape(url: string, shoulder: number): Promise<HoodShape | null> {
   const { mask, rowL, rowR } = await layerExtent(url)
@@ -553,7 +566,7 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
     releaseCanvas(bc)
     return shape
   }
-  return { W, H, top, x0, bottom, kind }
+  return { W, H, top, x0, bottom, kind, endRow: end }
 }
 
 /**
@@ -572,6 +585,7 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
   const ye = Math.min(H - 4, top + Math.round(0.09 * H))
   const at = (x: number, y: number) => (y * W + x) * 4
   const raw = new Float32Array(c1 - c0 + 1).fill(-1)
+  const piped = new Uint8Array(c1 - c0 + 1)
   for (let x = c0; x <= c1; x++) {
     // il bordino del colletto (chiaro e poco colorato): il pixel più basso vicino alla cima della
     // colonna. Una spalla non ha bordino; una scritta colorata non conta.
@@ -587,6 +601,7 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
     }
     // nelle colonne del collo il colletto arriva almeno alla sua base, e fino al bordino se scende
     // (il bavero aperto); di lato c'è solo dove c'è il bordino (le punte)
+    if (low >= 0) piped[x - c0] = 1
     if (x >= x0 && x <= x1) raw[x - c0] = low >= 0 ? Math.max(low + 1, base) : base
     else if (low >= 0) raw[x - c0] = low + 1
   }
@@ -632,7 +647,7 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
     near.sort((a, b) => a - b)
     return near[near.length >> 1]
   })
-  return { W, H, top, x0: c0, bottom, kind: 'collar' }
+  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: base, neck: [x0, x1], piped }
 }
 
 /** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
@@ -654,7 +669,7 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
   }
   const shape = await p
   if (!shape) return null
-  const { W, H, top, x0, bottom, kind } = shape
+  const { W, H, top, x0, bottom, kind, endRow, neck, piped } = shape
   // bordo alto dei capi sopra, per colonna (alla scala del cappuccio)
   const outerTop = new Float32Array(W).fill(-1)
   for (const e of await Promise.all(above.map(layerExtent))) {
@@ -694,7 +709,17 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     const edge = Math.min(x - xs, xe - x) / Math.max(1, 0.035 * W)
     const k = Math.min(1, edge)
     const depth = overlap * k * k * (3 - 2 * k)
-    end[x - xs] = kind === 'collar' ? own : t >= 0 ? t + depth : own
+    if (kind === 'hood') {
+      // steso sul colletto, ma mai più del 3% sotto la fine della sua parte stretta: sulle spalle il
+      // bordo dei capi sopra è più in basso e il cappuccio ci scenderebbe come due ali
+      end[x - xs] = t >= 0 ? Math.min(t + depth, endRow + 0.03 * H) : own
+    } else {
+      // colletto, nelle colonne del collo: esce sopra il colletto dei capi sopra senza portarsi dietro
+      // il davanti della felpa (al massimo il 3% sotto il loro bordo alto); le punte restano intere
+      // (dove c'è il bordino il colletto arriva fino a lui: sono le punte del bavero)
+      const inNeck = neck && x >= neck[0] && x <= neck[1] && !piped?.[x - x0]
+      end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(own, t + 0.03 * H) : own
+    }
   }
   // a piena risoluzione: colonne interpolate, bordo di 2 px
   const S = size / Math.max(W, H)
@@ -729,7 +754,7 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
  * inside: lo strato è tenuto dentro i capi sopra e non esce sotto il loro orlo (per colonne, l'orlo
  * più basso tra i capi sopra; ganci e lacci stretti non contano).
  */
-export async function coverMask(above: string[], inside = false): Promise<HTMLCanvasElement | null> {
+export async function coverMask(above: string[], inside = false, self?: string): Promise<HTMLCanvasElement | null> {
   if (!above.length) return null
   const extents = await Promise.all(above.map(layerExtent))
   const masks = extents.map((e) => e.mask)
@@ -738,52 +763,73 @@ export async function coverMask(above: string[], inside = false): Promise<HTMLCa
   ctx.drawImage(masks[0], 0, 0)
   ctx.globalCompositeOperation = 'destination-in'
   for (const m of masks.slice(1)) ctx.drawImage(m, 0, 0, c.width, c.height)
+  const W = c.width
+  const H = c.height
+  const hem = hemOf(extents, W)
+  // fin dove si vede lo strato, per colonna: dentro, fino all'orlo dei capi sopra; fuori, tutto, ma un
+  // orlo che sporge solo di un filo (meno dell'1,2% dell'altezza) sembra un difetto e si nasconde
+  const limit = new Float32Array(W).fill(H)
   if (inside) {
-    const W = c.width
-    const H = c.height
-    // l'orlo di ogni capo sopra, per colonna; poi il più alto tra loro (quello del capo che copre
-    // davvero: una maglia dentro una felpa non esce sotto la felpa anche se la giacca è più lunga)
-    const hemOf = (e: Extent) => {
-      const k = e.colBottom.length / W
-      const bottom = Float32Array.from({ length: W }, (_, x) => {
-        const v = e.colBottom[Math.min(e.colBottom.length - 1, Math.floor(x * k))]
-        return v < 0 ? -1 : v / k
-      })
-      // giacca aperta: nelle colonne dell'apertura l'orlo non c'è (o c'è solo la punta del colletto):
-      // si prende quello dei due lembi accanto, il più basso entro il 12% della larghezza per lato
-      const R = Math.round(W * 0.12)
-      const filled = Float32Array.from(bottom, (v, x) => {
-        let lf = -1
-        let rt = -1
-        for (let j = Math.max(0, x - R); j < x; j++) lf = Math.max(lf, bottom[j])
-        for (let j = x + 1; j <= Math.min(W - 1, x + R); j++) rt = Math.max(rt, bottom[j])
-        // solo tra due lembi (o sotto il capo): oltre il bordo del capo resta com'è
-        if (v < 0 && (lf < 0 || rt < 0)) return -1
-        return Math.max(v, Math.min(lf, rt))
-      })
-      // un orlo più basso solo in poche colonne (un gancio) non conta: mediana larga
-      const r = Math.max(3, Math.round(W * 0.03))
-      return Float32Array.from(filled, (v, x) => {
-        if (v < 0) return -1
-        const near: number[] = []
-        for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (filled[j] >= 0) near.push(filled[j])
-        near.sort((p, q) => p - q)
-        return near[near.length >> 1]
-      })
+    for (let x = 0; x < W; x++) if (hem[x] >= 0) limit[x] = hem[x] + 1
+  } else if (self) {
+    const own = await layerExtent(self)
+    const k = own.colBottom.length / W
+    for (let x = 0; x < W; x++) {
+      if (hem[x] < 0) continue
+      const b = own.colBottom[Math.min(own.colBottom.length - 1, Math.floor(x * k))] / k
+      if (b > hem[x] && b - hem[x] < 0.012 * H) limit[x] = hem[x] + 1
     }
-    const hem = new Float32Array(W).fill(-1)
-    for (const e of extents) {
-      const h = hemOf(e)
-      for (let x = 0; x < W; x++) if (h[x] >= 0) hem[x] = hem[x] < 0 ? h[x] : Math.min(hem[x], h[x])
-    }
+  }
+  if (inside || self) {
     const keep = makeCanvas(W, H)
     const kctx = ctx2d(keep)
     kctx.fillStyle = '#000'
-    for (let x = 0; x < W; x++) kctx.fillRect(x, 0, 1, hem[x] < 0 ? H : hem[x] + 1)
+    for (let x = 0; x < W; x++) kctx.fillRect(x, 0, 1, limit[x])
     ctx.drawImage(keep, 0, 0)
     releaseCanvas(keep)
   }
   return c
+}
+
+/**
+ * L'orlo dei capi sopra, per colonna: per ognuno l'orlo più basso, con l'apertura di una giacca aperta
+ * riempita dai due lembi accanto e ganci e lacci ignorati; poi il più alto tra i capi (quello del capo
+ * che copre davvero: una maglia dentro una felpa non esce sotto la felpa anche se la giacca è più lunga).
+ */
+function hemOf(extents: Extent[], W: number): Float32Array {
+  const one = (e: Extent) => {
+    const k = e.colBottom.length / W
+    const bottom = Float32Array.from({ length: W }, (_, x) => {
+      const v = e.colBottom[Math.min(e.colBottom.length - 1, Math.floor(x * k))]
+      return v < 0 ? -1 : v / k
+    })
+    // giacca aperta: nelle colonne dell'apertura l'orlo non c'è (o c'è solo la punta del colletto):
+    // si prende quello dei due lembi accanto, il più basso entro il 12% della larghezza per lato
+    const R = Math.round(W * 0.12)
+    const filled = Float32Array.from(bottom, (v, x) => {
+      let lf = -1
+      let rt = -1
+      for (let j = Math.max(0, x - R); j < x; j++) lf = Math.max(lf, bottom[j])
+      for (let j = x + 1; j <= Math.min(W - 1, x + R); j++) rt = Math.max(rt, bottom[j])
+      if (v < 0 && (lf < 0 || rt < 0)) return -1
+      return Math.max(v, Math.min(lf, rt))
+    })
+    // un orlo più basso solo in poche colonne (un gancio) non conta: mediana larga
+    const r = Math.max(3, Math.round(W * 0.03))
+    return Float32Array.from(filled, (v, x) => {
+      if (v < 0) return -1
+      const near: number[] = []
+      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (filled[j] >= 0) near.push(filled[j])
+      near.sort((p, q) => p - q)
+      return near[near.length >> 1]
+    })
+  }
+  const hem = new Float32Array(W).fill(-1)
+  for (const e of extents) {
+    const h = one(e)
+    for (let x = 0; x < W; x++) if (h[x] >= 0) hem[x] = hem[x] < 0 ? h[x] : Math.min(hem[x], h[x])
+  }
+  return hem
 }
 
 /**

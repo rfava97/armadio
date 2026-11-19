@@ -24,8 +24,8 @@ export function useCoverMasks(urls: string[], shoulder: number | undefined, insi
     const top = line ? Number(line) : undefined
     Promise.all([
       Promise.all(
-        list.map(async (_, i) => {
-          const c = await coverMask(list.slice(i + 1), flags[i] === '1')
+        list.map(async (u, i) => {
+          const c = await coverMask(list.slice(i + 1), flags[i] === '1', u)
           if (!c) return undefined
           const url = c.toDataURL('image/png')
           releaseCanvas(c)
