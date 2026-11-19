@@ -563,19 +563,18 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
     Float32Array.from(arr, (_, i) => f([...arr.slice(Math.max(0, i - r), Math.min(n, i + r + 1))]))
   const median = win(filled, 4, (v) => v.sort((a, b) => a - b)[v.length >> 1])
   const bottom = win(median, 5, (v) => v.reduce((a, b) => a + b, 0) / v.length)
-  if (kind === 'collar') {
-    // il bordino è sottile: a 400 px sparisce, il colletto si analizza a piena risoluzione
-    const big = await bitmapOf(url, 1200)
-    const bc = makeCanvas(big.width, big.height)
-    ctx2d(bc).drawImage(big, 0, 0)
-    big.close()
-    const bd = ctx2d(bc).getImageData(0, 0, bc.width, bc.height).data
-    const f = bc.width / W
-    const shape = collarShape(bd, bc.width, bc.height, Math.round(top * f), Math.round(x0 * f), Math.round(x1 * f), Math.round(end * f))
-    releaseCanvas(bc)
-    return shape
-  }
-  return { W, H, top, x0, bottom, kind, endRow: end }
+  // il bordino è sottile: a 400 px sparisce, il colletto si analizza a piena risoluzione. Anche un
+  // "cappuccio" può essere un colletto molto aperto (felpa con la zip a 3/4): se il bordino a contrasto
+  // chiude un colletto, è un colletto.
+  const big = await bitmapOf(url, 1200)
+  const bc = makeCanvas(big.width, big.height)
+  ctx2d(bc).drawImage(big, 0, 0)
+  big.close()
+  const bd = ctx2d(bc).getImageData(0, 0, bc.width, bc.height).data
+  const f = bc.width / W
+  const shape = collarShape(bd, bc.width, bc.height, Math.round(top * f), Math.round(x0 * f), Math.round(x1 * f), Math.round(end * f), kind === 'hood')
+  releaseCanvas(bc)
+  return shape ?? { W, H, top, x0, bottom, kind, endRow: end }
 }
 
 /**
@@ -584,7 +583,17 @@ async function hoodShape(url: string, shoulder: number): Promise<HoodShape | nul
  * colorato) che le contorna: si tiene fino al bordino più basso vicino alla cima della colonna. Senza
  * bordino (una spalla, o un capo senza bordino) lì il colletto non c'è.
  */
-function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0: number, x1: number, base: number): HoodShape {
+function collarShape(
+  d: Uint8ClampedArray,
+  W: number,
+  H: number,
+  top: number,
+  x0: number,
+  x1: number,
+  base: number,
+  /** solo un colletto chiuso dal bordino (altrimenti null) */
+  onlyPiped = false,
+): HoodShape | null {
   const g = Math.round(0.07 * W)
   const c0 = Math.max(0, x0 - g)
   const c1 = Math.min(W - 1, x1 + g)
@@ -610,6 +619,11 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
       if (light(i)) pale++
     }
   const contrast = opaque > 0 && pale / opaque < 0.4
+  if (contrast) {
+    const shape = pipedCollar(d, W, H, top, x0, x1, c0, c1, light)
+    if (shape) return shape
+  }
+  if (onlyPiped) return null
   const raw = new Float32Array(c1 - c0 + 1).fill(-1)
   const piped = new Uint8Array(c1 - c0 + 1)
   for (let x = c0; x <= c1; x++) {
@@ -677,6 +691,68 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
     return near[near.length >> 1]
   })
   return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: base, neck: [x0, x1], piped }
+}
+
+/**
+ * Colletto con il bordino a contrasto (felpa con la zip): la sua forma è la zona chiusa dal bordino.
+ * Si parte dal colletto attorno al collo (la riga all'1% sotto la cima, nelle colonne del collo) e ci
+ * si allarga tra i pixel del capo senza attraversare il bordino (che resta incluso): così le punte e il
+ * bavero hanno la stessa forma di quando la felpa si vede intera, senza la spalla sopra il bordino.
+ * null se il bordino non chiude il colletto (la zona arriva al 12% sotto la cima): vale la regola per colonne.
+ */
+function pipedCollar(
+  d: Uint8ClampedArray,
+  W: number,
+  H: number,
+  top: number,
+  x0: number,
+  x1: number,
+  c0: number,
+  c1: number,
+  light: (i: number) => boolean,
+): HoodShape | null {
+  const y1 = Math.min(H - 1, top + Math.round(0.12 * H))
+  const w = c1 - c0 + 1
+  const rows = y1 - top + 1
+  const seen = new Uint8Array(w * rows)
+  const queue = new Int32Array(w * rows)
+  let head = 0
+  let tail = 0
+  const at = (x: number, y: number) => (y * W + x) * 4
+  const visit = (x: number, y: number) => {
+    if (x < c0 || x > c1 || y < top || y > y1) return
+    const k = (y - top) * w + (x - c0)
+    if (seen[k]) return
+    const i = at(x, y)
+    if (d[i + 3] < 200) return
+    seen[k] = 1
+    // il bordino fa parte del colletto ma lo chiude: da lì non si va oltre
+    if (!light(i)) queue[tail++] = k
+  }
+  const ys = Math.min(y1, top + Math.round(0.01 * H))
+  for (let x = x0; x <= x1; x++) visit(x, ys)
+  while (head < tail) {
+    const k = queue[head++]
+    const x = (k % w) + c0
+    const y = Math.floor(k / w) + top
+    visit(x + 1, y)
+    visit(x - 1, y)
+    visit(x, y + 1)
+    visit(x, y - 1)
+  }
+  const bottom = new Float32Array(w).fill(-1)
+  for (let k = 0; k < seen.length; k++) {
+    if (!seen[k]) continue
+    const x = k % w
+    const y = Math.floor(k / w) + top
+    if (y >= y1) return null
+    if (y > bottom[x]) bottom[x] = y
+  }
+  if (!bottom.some((v) => v >= 0)) return null
+  // il bordino per intero (1-2 px oltre l'ultimo pixel trovato)
+  for (let x = 0; x < w; x++) if (bottom[x] >= 0) bottom[x] += 2
+  const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
+  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped }
 }
 
 /** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
