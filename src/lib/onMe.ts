@@ -621,11 +621,7 @@ function collarShape(
       if (light(i)) pale++
     }
   const contrast = opaque > 0 && pale / opaque < 0.4
-  // un colletto aperto (zip aperta o a 3/4: al centro, poco sotto la cima, lo strato è vuoto) prende la
-  // forma chiusa dal bordino; un colletto chiuso resta con la regola per colonne, che lo fa meglio
-  const cx = Math.round((x0 + x1) / 2)
-  const open = d[at(cx, Math.min(H - 1, top + Math.round(0.05 * H))) + 3] < 200
-  if (contrast && open) {
+  if (contrast) {
     const shape = pipedCollar(d, W, H, top, x0, x1, c0, c1, light)
     if (shape) return shape
   }
@@ -726,30 +722,45 @@ function pipedCollar(
   const w = c1 - c0 + 1
   const rows = y1 - top + 1
   const seen = new Uint8Array(w * rows)
+  // per i pixel del bordino: quanti passi dentro il bordino (0 = fuori)
+  const depth = new Uint8Array(w * rows)
   const queue = new Int32Array(w * rows)
   let head = 0
   let tail = 0
   const at = (x: number, y: number) => (y * W + x) * 4
-  const visit = (x: number, y: number) => {
+  // il bordino fa parte del colletto e lo chiude: si attraversa solo per il suo spessore (al massimo
+  // l'1,2% dell'altezza), così si prende tutto anche quando è largo ma non si scappa lungo le righe
+  const thick = Math.max(2, Math.min(250, Math.round(0.012 * H)))
+  const visit = (x: number, y: number, from: number) => {
     if (x < c0 || x > c1 || y < top || y > y1) return
     const k = (y - top) * w + (x - c0)
     if (seen[k]) return
     const i = at(x, y)
     if (d[i + 3] < 200) return
+    if (light(i)) {
+      const dd = from + 1
+      if (dd > thick) return
+      seen[k] = 1
+      depth[k] = dd
+      queue[tail++] = k
+      return
+    }
+    // dal bordino non si torna nel capo: oltre il bordino c'è il resto della felpa
+    if (from > 0) return
     seen[k] = 1
-    // il bordino fa parte del colletto ma lo chiude: da lì non si va oltre
-    if (!light(i)) queue[tail++] = k
+    queue[tail++] = k
   }
   const ys = Math.min(y1, top + Math.round(0.01 * H))
-  for (let x = x0; x <= x1; x++) visit(x, ys)
+  for (let x = x0; x <= x1; x++) visit(x, ys, 0)
   while (head < tail) {
     const k = queue[head++]
     const x = (k % w) + c0
     const y = Math.floor(k / w) + top
-    visit(x + 1, y)
-    visit(x - 1, y)
-    visit(x, y + 1)
-    visit(x, y - 1)
+    const dd = depth[k]
+    visit(x + 1, y, dd)
+    visit(x - 1, y, dd)
+    visit(x, y + 1, dd)
+    visit(x, y - 1, dd)
   }
   const bottom = new Float32Array(w).fill(-1)
   for (let k = 0; k < seen.length; k++) {
@@ -760,7 +771,7 @@ function pipedCollar(
     if (y > bottom[x]) bottom[x] = y
   }
   if (!bottom.some((v) => v >= 0)) return null
-  // il bordino per intero (1-2 px oltre l'ultimo pixel trovato)
+  // il bordo morbido del bordino (1-2 px oltre l'ultimo pixel trovato)
   for (let x = 0; x < w; x++) if (bottom[x] >= 0) bottom[x] += 2
   const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
   return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped }
@@ -938,9 +949,14 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       // girocollo) non resta un buco con la pelle
       const inNeck = neck && x >= neck[0] && x <= neck[1] && !piped?.[x - x0]
       end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(Math.max(own, t + 0.012 * H), t + 0.03 * H) : own
-      // polo sotto uno scollo tondo (girocollo): le punte non coprono lo scollo, si fermano appena sotto
-      // il suo bordo alto
-      if (crew && t >= 0 && end[x - xs] >= 0) end[x - xs] = Math.min(end[x - xs], t + 0.012 * H)
+      // polo sotto uno scollo tondo (girocollo): ai lati il colletto non copre lo scollo, si ferma appena
+      // sotto il suo bordo alto; al centro le punte scendono sopra lo scollo
+      if (crew && t >= 0 && end[x - xs] >= 0 && neck) {
+        // le punte: un V sotto il bordo dello scollo, profondo il 2,5% dell'altezza al centro e largo il
+        // 5% della larghezza per lato
+        const tip = Math.max(0, 1 - Math.abs(x - (neck[0] + neck[1]) / 2) / (0.05 * W))
+        end[x - xs] = Math.min(end[x - xs], t + 0.012 * H + 0.025 * H * tip)
+      }
     }
   }
   if (kind === 'hood') {
