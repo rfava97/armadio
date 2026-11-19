@@ -778,6 +778,10 @@ function pipedCollar(
     if (y > bottom[x]) bottom[x] = y
   }
   if (!bottom.some((v) => v >= 0)) return null
+  // senza bordino vero (una camicia nera: nero su nero) la zona non ha confini: non è questo colletto
+  let piping = 0
+  for (let k = 0; k < seen.length; k++) if (depth[k]) piping++
+  if (piping < 0.02 * W) return null
   // il bordo morbido del bordino (1-2 px oltre l'ultimo pixel trovato)
   for (let x = 0; x < w; x++) if (bottom[x] >= 0) bottom[x] += 2
   // colletto chiuso (al centro lo scollo finisce entro il 6% sotto la cima; una zip a 3/4 scende di più):
