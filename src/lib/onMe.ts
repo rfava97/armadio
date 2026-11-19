@@ -451,6 +451,8 @@ type HoodShape = {
   neck?: [number, number]
   /** colletto: colonne in cui si è trovato il bordino (lì il colletto arriva fino al bordino) */
   piped?: Uint8Array
+  /** colletto morbido (polo): tra le punte si rimette la foto del collo */
+  soft?: boolean
 }
 
 async function hoodShape(url: string, shoulder: number): Promise<HoodShape | null> {
@@ -619,11 +621,20 @@ function collarShape(
       if (light(i)) pale++
     }
   const contrast = opaque > 0 && pale / opaque < 0.4
-  if (contrast) {
+  // un colletto aperto (zip aperta o a 3/4: al centro, poco sotto la cima, lo strato è vuoto) prende la
+  // forma chiusa dal bordino; un colletto chiuso resta con la regola per colonne, che lo fa meglio
+  const cx = Math.round((x0 + x1) / 2)
+  const open = d[at(cx, Math.min(H - 1, top + Math.round(0.05 * H))) + 3] < 200
+  if (contrast && open) {
     const shape = pipedCollar(d, W, H, top, x0, x1, c0, c1, light)
     if (shape) return shape
   }
   if (onlyPiped) return null
+  // capo chiaro con le righe scure sul colletto (polo): le punte arrivano fino alle righe
+  if (!contrast) {
+    const shape = tippedCollar(d, W, H, top, x0, x1, c0, c1)
+    if (shape) return shape
+  }
   const raw = new Float32Array(c1 - c0 + 1).fill(-1)
   const piped = new Uint8Array(c1 - c0 + 1)
   for (let x = c0; x <= c1; x++) {
@@ -753,6 +764,76 @@ function pipedCollar(
   for (let x = 0; x < w; x++) if (bottom[x] >= 0) bottom[x] += 2
   const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
   return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped }
+}
+
+/**
+ * Colletto di una polo (capo chiaro) con le righe scure lungo il bordo delle punte: in ogni colonna le
+ * punte arrivano poco sotto la riga più bassa (il bordo del colletto è appena oltre le righe); tra le
+ * righe di sinistra e di destra (le punte che si toccano davanti) il bordo si unisce in linea retta.
+ * Così sopra un girocollo si vedono le punte come quando la polo è da sola. null se non ci sono righe
+ * da entrambi i lati.
+ */
+function tippedCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x0: number, x1: number, c0: number, c1: number): HoodShape | null {
+  const ye = Math.min(H - 1, top + Math.round(0.07 * H))
+  const cx = Math.round((x0 + x1) / 2)
+  const w = c1 - c0 + 1
+  const low = new Float32Array(w).fill(-1)
+  for (let x = c0; x <= c1; x++) {
+    for (let y = top; y <= ye; y++) {
+      const i = (y * W + x) * 4
+      if (d[i + 3] < 200) continue
+      if (Math.max(d[i], d[i + 1], d[i + 2]) < 110) low[x - c0] = y
+    }
+  }
+  // per lato, solo le colonne vicine alla riga vera (entro il 3% dell'altezza dalla mediana del lato):
+  // un'ombra o un bottone scuro più in basso non conta
+  const side = (from: number, to: number) => {
+    const ys: number[] = []
+    for (let i = from; i <= to; i++) if (low[i] >= 0) ys.push(low[i])
+    if (ys.length < 2) return false
+    ys.sort((p, q) => p - q)
+    const med = ys[ys.length >> 1]
+    for (let i = from; i <= to; i++) if (low[i] >= 0 && Math.abs(low[i] - med) > 0.03 * H) low[i] = -1
+    return true
+  }
+  if (!side(0, cx - c0 - 1) || !side(cx - c0, w - 1)) return null
+  const margin = Math.round(0.012 * H)
+  // la riga di ogni lato: la colonna più interna (verso il collo) e la sua fine
+  let iL = -1
+  for (let i = 0; i < cx - c0; i++) if (low[i] >= 0) iL = i
+  let iR = -1
+  for (let i = w - 1; i >= cx - c0; i--) if (low[i] >= 0) iR = i
+  let oL = iL
+  for (let i = 0; i < iL; i++) if (low[i] >= 0) {
+    oL = i
+    break
+  }
+  let oR = iR
+  for (let i = w - 1; i > iR; i--) if (low[i] >= 0) {
+    oR = i
+    break
+  }
+  const bL = low[iL] + margin
+  const bR = low[iR] + margin
+  // la punta della V davanti: al centro, la prima riga del capo sotto lo scollo
+  let vy = top
+  const atA = (x: number, y: number) => d[(y * W + x) * 4 + 3]
+  while (vy < H - 1 && vy < top + 0.12 * H && atA(cx, vy) < 200) vy++
+  const bC = Math.max(bL, bR, Math.min(vy, top + 0.12 * H) + margin)
+  // il bordo basso: dalle righe scende dritto verso la punta della V; oltre le righe il bordo bianco
+  // (l'1% della larghezza) risale verso la cima
+  const bottom = new Float32Array(w).fill(-1)
+  const pad = Math.round(0.01 * W)
+  for (let i = Math.max(0, oL - pad); i <= Math.min(w - 1, oR + pad); i++) {
+    if (i < oL) bottom[i] = bL - ((oL - i) / pad) * (bL - top) * 0.5
+    else if (i <= iL) bottom[i] = bL
+    else if (i < cx - c0) bottom[i] = bL + ((bC - bL) * (i - iL)) / Math.max(1, cx - c0 - iL)
+    else if (i < iR) bottom[i] = bC + ((bR - bC) * (i - (cx - c0))) / Math.max(1, iR - (cx - c0))
+    else if (i <= oR) bottom[i] = bR
+    else bottom[i] = bR - ((i - oR) / pad) * (bR - top) * 0.5
+  }
+  const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
+  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped, soft: true }
 }
 
 /** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
@@ -917,7 +998,7 @@ export async function collarHole(bodyUrl: string, url: string, shoulder: number,
   // solo un colletto senza bordino a contrasto (polo, camicia): con le punte del bavero (una felpa
   // con la zip) tra le punte c'è il colletto dei capi sopra, che resta
   const shape = await shapeOf(url, shoulder)
-  if (shape?.kind !== 'collar' || shape.piped?.some((v) => v)) return null
+  if (shape?.kind !== 'collar' || (!shape.soft && shape.piped?.some((v) => v))) return null
   const mask = await hoodMask(url, shoulder, above, size)
   if (!mask) return null
   const W = mask.width
