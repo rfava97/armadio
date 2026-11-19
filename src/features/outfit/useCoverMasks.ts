@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { coverMask, hoodMask } from '@/lib/onMe'
+import { coverMask, hoodKind, hoodMask } from '@/lib/onMe'
 import { releaseCanvas } from '@/lib/image/canvas'
 
-type Covers = { masks: (string | undefined)[]; hoods: (string | undefined)[] }
-const NONE: Covers = { masks: [], hoods: [] }
+type Kind = 'hood' | 'collar' | null
+type Covers = { masks: (string | undefined)[]; hoods: (string | undefined)[]; kinds: Kind[] }
+const NONE: Covers = { masks: [], hoods: [], kinds: [] }
 
 /**
  * Strati del busto "su di me" (dal più interno al più esterno):
@@ -11,16 +12,19 @@ const NONE: Covers = { masks: [], hoods: [] }
  *   l'ultimo non ne ha);
  * - hoods: per gli strati sotto con un cappuccio, la sua forma (data URL), da disegnare sopra i capi esterni.
  * `shoulder`: riga delle spalle nel fotogramma dei livelli (senza, niente cappucci).
+ * - kinds: per gli strati sotto, se hanno un cappuccio o un collo alto che può spuntare (anche se tenuto dentro).
  * `inside`: per ogni strato, se è tenuto dentro i capi sopra (non esce sotto il loro orlo).
+ * `collarIn`: per ogni strato, se il colletto o il cappuccio resta sotto i capi sopra.
  */
-export function useCoverMasks(urls: string[], shoulder: number | undefined, inside: boolean[] = []): Covers {
-  const key = `${shoulder ?? ''}|${inside.map((v) => (v ? 1 : 0)).join('')}\n${urls.join('\n')}`
+export function useCoverMasks(urls: string[], shoulder: number | undefined, inside: boolean[] = [], collarIn: boolean[] = []): Covers {
+  const bits = (a: boolean[]) => a.map((v) => (v ? 1 : 0)).join('')
+  const key = `${shoulder ?? ''}|${bits(inside)}|${bits(collarIn)}\n${urls.join('\n')}`
   const [covers, setCovers] = useState<{ key: string } & Covers>({ key: '', ...NONE })
   useEffect(() => {
     const [head, ...list] = key.split('\n')
     if (list.length < 2) return
     let cancelled = false
-    const [line, flags] = head.split('|')
+    const [line, flags, collars = ''] = head.split('|')
     const top = line ? Number(line) : undefined
     Promise.all([
       Promise.all(
@@ -34,7 +38,7 @@ export function useCoverMasks(urls: string[], shoulder: number | undefined, insi
       ),
       Promise.all(
         list.map(async (u, i) => {
-          if (top === undefined || i === list.length - 1) return undefined
+          if (top === undefined || i === list.length - 1 || collars[i] === '1') return undefined
           const c = await hoodMask(u, top, list.slice(i + 1))
           if (!c) return undefined
           const url = c.toDataURL('image/png')
@@ -42,8 +46,9 @@ export function useCoverMasks(urls: string[], shoulder: number | undefined, insi
           return url
         }),
       ),
+      Promise.all(list.map((u, i) => (top === undefined || i === list.length - 1 ? null : hoodKind(u, top)))),
     ])
-      .then(([masks, hoods]) => !cancelled && setCovers({ key, masks, hoods }))
+      .then(([masks, hoods, kinds]) => !cancelled && setCovers({ key, masks, hoods, kinds }))
       .catch((e) => console.error(e))
     return () => {
       cancelled = true

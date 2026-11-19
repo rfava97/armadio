@@ -31,6 +31,8 @@ type Props = {
   onStep: (dir: 1 | -1) => void
   /** "Su di me": anteprima della correzione del capo attivo, disegnata fuori da React */
   adjustCanvas?: HTMLCanvasElement | null
+  /** "Su di me": per ogni strato del busto coperto, cosa può spuntare sopra i capi esterni */
+  onCollars?: (kinds: Map<string, 'hood' | 'collar'>) => void
 }
 
 /**
@@ -89,7 +91,7 @@ type Item = {
  * Il palco del camerino. Swipe orizzontale: capo precedente/successivo della zona attiva.
  * Tocco: sceglie la zona. Sul tavolo i capi sono le loro foto; "su di me" sono i livelli generati.
  */
-export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanvas }: Props) {
+export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanvas, onCollars }: Props) {
   const stage = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
   const dragX = useMotionValue(0)
@@ -244,7 +246,12 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     onMeTops,
     shoulderLine,
     tops.map((t) => (state.outfit.inside ?? []).includes(t.id)),
+    tops.map((t) => (state.outfit.collarIn ?? []).includes(t.id)),
   )
+  const collarKey = tops.flatMap((t, i) => (covers.kinds[i] ? [`${t.id}:${covers.kinds[i]}`] : [])).join(',')
+  useEffect(() => {
+    onCollars?.(new Map(collarKey ? collarKey.split(',').map((p) => p.split(':') as [string, 'hood' | 'collar']) : []))
+  }, [collarKey, onCollars])
 
   if (onMe) {
     // il livello copre la foto allargata del margine usato nella generazione

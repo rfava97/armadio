@@ -216,6 +216,8 @@ export async function composeOnMe(
   shoulderY?: number,
   /** per ogni strato del busto (dal più interno): tenuto dentro i capi sopra */
   inside: boolean[] = [],
+  /** per ogni strato del busto: colletto o cappuccio lasciato sotto i capi sopra (non tirato fuori) */
+  collarIn: boolean[] = [],
 ): Promise<Blob> {
   const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
   const body = await load(bodyUrl)
@@ -250,8 +252,9 @@ export async function composeOnMe(
   // cappucci degli strati sotto, sopra i capi esterni
   if (shoulderY !== undefined) {
     const line = layerRow(shoulderY, w / h)
-    for (const u of tops.slice(0, -1)) {
-      const hood = await hoodMask(u, line, tops.slice(tops.indexOf(u) + 1))
+    for (const [k, u] of tops.slice(0, -1).entries()) {
+      if (collarIn[k]) continue
+      const hood = await hoodMask(u, line, tops.slice(k + 1))
       if (!hood) continue
       const l = await load(u)
       const t = makeCanvas(l.width, l.height)
@@ -673,7 +676,12 @@ const HOOD_OVERLAP = 0.04
  * poco sotto il bordo alto dei capi sopra (il colletto, la pelliccia): così segue il loro profilo
  * invece di tagliarli con una riga.
  */
-export async function hoodMask(url: string, shoulder: number, above: string[] = [], size = 1200): Promise<HTMLCanvasElement | null> {
+/** cosa spunta dallo strato sopra i capi esterni: cappuccio, collo alto o niente */
+export async function hoodKind(url: string, shoulder: number): Promise<'hood' | 'collar' | null> {
+  return (await shapeOf(url, shoulder))?.kind ?? null
+}
+
+function shapeOf(url: string, shoulder: number): Promise<HoodShape | null> {
   const key = `${url}|${shoulder.toFixed(4)}`
   let p = hoods.get(key)
   if (!p) {
@@ -681,7 +689,11 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     hoods.set(key, p)
     if (hoods.size > 24) hoods.delete(hoods.keys().next().value!)
   }
-  const shape = await p
+  return p
+}
+
+export async function hoodMask(url: string, shoulder: number, above: string[] = [], size = 1200): Promise<HTMLCanvasElement | null> {
+  const shape = await shapeOf(url, shoulder)
   if (!shape) return null
   const { W, H, top, x0, bottom, kind, endRow, neck, piped } = shape
   // bordo alto dei capi sopra, per colonna (alla scala del cappuccio)

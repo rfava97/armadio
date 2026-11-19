@@ -44,6 +44,7 @@ import {
   saveState,
   setActiveId,
   setInside,
+  setCollarIn,
   setWear,
   shuffle,
   STAGE_ZONES,
@@ -69,6 +70,7 @@ export default function Outfit() {
   const [picking, setPicking] = useState(false)
   const [trying, setTrying] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [collars, setCollars] = useState<Map<string, 'hood' | 'collar'>>(() => new Map())
   // correzione a mano del capo attivo "su di me": per modo, con il punto fisso letto dal livello
   const [adjusting, setAdjusting] = useState<{ wearId: string; guide: AdjustGuide | null; value: LayerAdjust } | null>(null)
   const adjustMut = useAdjustLayer()
@@ -150,6 +152,9 @@ export default function Outfit() {
     state.outfit.busto.some((id, i) => i > state.active.layer && !!id && garmentLayers.has(id)) &&
     garmentLayers.has(activeGarment.id)
   const inside = !!activeGarment && !!state?.outfit.inside?.includes(activeGarment.id)
+  // colletto o cappuccio che può spuntare dai capi sopra: si sceglie se tirarlo fuori
+  const collarKind = covered && activeGarment ? collars.get(activeGarment.id) : undefined
+  const collarIn = !!activeGarment && !!state?.outfit.collarIn?.includes(activeGarment.id)
   // strati del busto con il livello pronto, dal più interno (per l'immagine da salvare)
   const savedTops = (state?.outfit.busto ?? [])
     .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
@@ -341,6 +346,7 @@ export default function Outfit() {
                 onSelectZone={(zone) => update((s) => (s.active.zone === zone ? s : { ...s, active: { zone, layer: 0 } }))}
                 onStep={(d) => update((s) => setActiveId(s, neighbor(s, garments, d)))}
                 adjustCanvas={adjust ? adjustCanvas : null}
+                onCollars={setCollars}
               />
             )}
             {zoneCount === 0 && (
@@ -372,12 +378,26 @@ export default function Outfit() {
                   ))}
                 </div>
               )}
+              {collarKind && (
+                <button
+                  type="button"
+                  aria-pressed={!collarIn}
+                  onClick={() => update((s) => setCollarIn(s, activeGarment.id, !collarIn))}
+                  className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold"
+                >
+                  {collarIn ? <ArrowDownToLine className="size-4 text-accent" aria-hidden /> : <ArrowUpToLine className="size-4 text-accent" aria-hidden />}
+                  {collarKind === 'hood' ? (collarIn ? 'Cappuccio dentro' : 'Cappuccio fuori') : collarIn ? 'Colletto dentro' : 'Colletto fuori'}
+                </button>
+              )}
               {covered && (
                 <button
                   type="button"
                   aria-pressed={inside}
                   onClick={() => update((s) => setInside(s, activeGarment.id, !inside))}
-                  className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold"
+                  className={cn(
+                    'flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold',
+                    !collarKind && 'ml-auto',
+                  )}
                 >
                   {inside ? <ArrowUpToLine className="size-4 text-accent" aria-hidden /> : <ArrowDownToLine className="size-4 text-accent" aria-hidden />}
                   {inside ? 'Dentro' : 'Esce sotto'}
@@ -422,6 +442,7 @@ export default function Outfit() {
                 ...savedTops.map((g) => garmentLayers.get(g.id)!),
               ]}
               inside={savedTops.map((g) => !!state.outfit.inside?.includes(g.id))}
+              collarIn={savedTops.map((g) => !!state.outfit.collarIn?.includes(g.id))}
               topsFrom={
                 (state.outfit.piedi && garmentLayers.get(state.outfit.piedi) ? 1 : 0) +
                 (state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0)

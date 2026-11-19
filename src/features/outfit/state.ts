@@ -38,6 +38,8 @@ export type Outfit = {
   wears?: Record<string, string>
   /** strati del busto tenuti dentro i capi sopra: non escono sotto il loro orlo */
   inside?: string[]
+  /** strati del busto con il colletto (o il cappuccio) lasciato sotto i capi sopra */
+  collarIn?: string[]
 }
 
 export type Active = { zone: StageZone; layer: number }
@@ -116,6 +118,7 @@ export function sanitize(s: CamerinoState, garments: Garment[]): CamerinoState {
     tucked: (s.outfit.tucked ?? []).filter((id) => ids.has(id)),
     wears: Object.fromEntries(Object.entries(s.outfit.wears ?? {}).filter(([id]) => ids.has(id))),
     inside: (s.outfit.inside ?? []).filter((id) => ids.has(id)),
+    collarIn: (s.outfit.collarIn ?? []).filter((id) => ids.has(id)),
   }
   const layer = s.active.zone === 'busto' ? Math.min(s.active.layer, outfit.busto.length - 1) : 0
   return { outfit, active: { zone: s.active.zone, layer: Math.max(0, layer) } }
@@ -235,6 +238,11 @@ export function setWear(s: CamerinoState, garmentId: string, wearId: string): Ca
 }
 
 /** Strato del busto dentro i capi sopra (non esce sotto il loro orlo) o fuori. */
+export function setCollarIn(s: CamerinoState, garmentId: string, collarIn: boolean): CamerinoState {
+  const rest = (s.outfit.collarIn ?? []).filter((id) => id !== garmentId)
+  return { ...s, outfit: { ...s.outfit, collarIn: collarIn ? [...rest, garmentId] : rest } }
+}
+
 export function setInside(s: CamerinoState, garmentId: string, inside: boolean): CamerinoState {
   const rest = (s.outfit.inside ?? []).filter((id) => id !== garmentId)
   return { ...s, outfit: { ...s.outfit, inside: inside ? [...rest, garmentId] : rest } }
