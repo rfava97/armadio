@@ -874,6 +874,24 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       if (t >= 0) outerTop[x] = outerTop[x] < 0 ? t / k : Math.min(outerTop[x], t / k)
     }
   }
+  // il capo sopra è chiuso al centro appena sotto il suo bordo (uno scollo tondo, non una V o
+  // un'apertura): conta per le punte di una polo
+  let crew = false
+  if (shape.soft && above.length && neck) {
+    const cx = Math.round((neck[0] + neck[1]) / 2)
+    const t = outerTop[cx]
+    if (t >= 0) {
+      const ob = await bitmapOf(above[above.length - 1], 400)
+      const oc = makeCanvas(ob.width, ob.height)
+      const octx = ctx2d(oc)
+      octx.drawImage(ob, 0, 0)
+      ob.close()
+      const f = oc.width / W
+      const px = octx.getImageData(Math.round(cx * f), Math.round((t + 0.025 * H) * f), 1, 1).data
+      crew = px[3] > 200
+      releaseCanvas(oc)
+    }
+  }
   // Collo alto: in piedi davanti al colletto dei capi sopra, intero fino alla sua base.
   // Cappuccio: tirato fuori e steso sul colletto dei capi sopra, fino a poco sotto il suo bordo alto
   // (il bordo vero del cappuccio sulle spalle è un'ombra leggera, non affidabile), solo nelle colonne
@@ -920,6 +938,9 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       // girocollo) non resta un buco con la pelle
       const inNeck = neck && x >= neck[0] && x <= neck[1] && !piped?.[x - x0]
       end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(Math.max(own, t + 0.012 * H), t + 0.03 * H) : own
+      // polo sotto uno scollo tondo (girocollo): le punte non coprono lo scollo, si fermano appena sotto
+      // il suo bordo alto
+      if (crew && t >= 0 && end[x - xs] >= 0) end[x - xs] = Math.min(end[x - xs], t + 0.012 * H)
     }
   }
   if (kind === 'hood') {
