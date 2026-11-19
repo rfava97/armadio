@@ -744,8 +744,10 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       // colletto, nelle colonne del collo: esce sopra il colletto dei capi sopra senza portarsi dietro
       // il davanti della felpa (al massimo il 3% sotto il loro bordo alto); le punte restano intere
       // (dove c'è il bordino il colletto arriva fino a lui: sono le punte del bavero)
+      // e almeno poco sotto il loro bordo alto: tra la base del colletto e uno scollo più basso (un
+      // girocollo) non resta un buco con la pelle
       const inNeck = neck && x >= neck[0] && x <= neck[1] && !piped?.[x - x0]
-      end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(own, t + 0.03 * H) : own
+      end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(Math.max(own, t + 0.012 * H), t + 0.03 * H) : own
     }
   }
   // a piena risoluzione: colonne interpolate, bordo di 2 px
