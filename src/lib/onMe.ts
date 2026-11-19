@@ -566,7 +566,10 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
   const g = Math.round(0.07 * W)
   const c0 = Math.max(0, x0 - g)
   const c1 = Math.min(W - 1, x1 + g)
-  const ye = Math.min(H - 4, Math.round(base + 0.07 * H))
+  // un colletto non è mai alto più del 4% dell'altezza (la base calcolata dalla larghezza può finire
+  // molto più giù, sul petto); le punte con il bordino arrivano al massimo al 9%
+  base = Math.min(base, top + Math.round(0.04 * H))
+  const ye = Math.min(H - 4, top + Math.round(0.09 * H))
   const at = (x: number, y: number) => (y * W + x) * 4
   const raw = new Float32Array(c1 - c0 + 1).fill(-1)
   for (let x = c0; x <= c1; x++) {
@@ -738,32 +741,41 @@ export async function coverMask(above: string[], inside = false): Promise<HTMLCa
   if (inside) {
     const W = c.width
     const H = c.height
-    const bottom = new Float32Array(W).fill(-1)
-    for (const e of extents) {
+    // l'orlo di ogni capo sopra, per colonna; poi il più alto tra loro (quello del capo che copre
+    // davvero: una maglia dentro una felpa non esce sotto la felpa anche se la giacca è più lunga)
+    const hemOf = (e: Extent) => {
       const k = e.colBottom.length / W
-      for (let x = 0; x < W; x++) bottom[x] = Math.max(bottom[x], e.colBottom[Math.min(e.colBottom.length - 1, Math.floor(x * k))] / k)
+      const bottom = Float32Array.from({ length: W }, (_, x) => {
+        const v = e.colBottom[Math.min(e.colBottom.length - 1, Math.floor(x * k))]
+        return v < 0 ? -1 : v / k
+      })
+      // giacca aperta: nelle colonne dell'apertura l'orlo non c'è (o c'è solo la punta del colletto):
+      // si prende quello dei due lembi accanto, il più basso entro il 12% della larghezza per lato
+      const R = Math.round(W * 0.12)
+      const filled = Float32Array.from(bottom, (v, x) => {
+        let lf = -1
+        let rt = -1
+        for (let j = Math.max(0, x - R); j < x; j++) lf = Math.max(lf, bottom[j])
+        for (let j = x + 1; j <= Math.min(W - 1, x + R); j++) rt = Math.max(rt, bottom[j])
+        // solo tra due lembi (o sotto il capo): oltre il bordo del capo resta com'è
+        if (v < 0 && (lf < 0 || rt < 0)) return -1
+        return Math.max(v, Math.min(lf, rt))
+      })
+      // un orlo più basso solo in poche colonne (un gancio) non conta: mediana larga
+      const r = Math.max(3, Math.round(W * 0.03))
+      return Float32Array.from(filled, (v, x) => {
+        if (v < 0) return -1
+        const near: number[] = []
+        for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (filled[j] >= 0) near.push(filled[j])
+        near.sort((p, q) => p - q)
+        return near[near.length >> 1]
+      })
     }
-    // giacca aperta: nelle colonne dell'apertura l'orlo non c'è (o c'è solo la punta del colletto):
-    // si prende quello dei due lembi accanto, il più basso entro il 12% della larghezza per lato
-    const R = Math.round(W * 0.12)
-    const filled = Float32Array.from(bottom, (v, x) => {
-      let lf = -1
-      let rt = -1
-      for (let j = Math.max(0, x - R); j < x; j++) lf = Math.max(lf, bottom[j])
-      for (let j = x + 1; j <= Math.min(W - 1, x + R); j++) rt = Math.max(rt, bottom[j])
-      // solo tra due lembi (o sotto il capo): oltre il bordo del capo resta com'è
-      if (v < 0 && (lf < 0 || rt < 0)) return -1
-      return Math.max(v, Math.min(lf, rt))
-    })
-    // un orlo più basso solo in poche colonne (un gancio) non conta: mediana larga
-    const r = Math.max(3, Math.round(W * 0.03))
-    const hem = Float32Array.from(filled, (v, x) => {
-      if (v < 0) return -1
-      const near: number[] = []
-      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (filled[j] >= 0) near.push(filled[j])
-      near.sort((a, b) => a - b)
-      return near[near.length >> 1]
-    })
+    const hem = new Float32Array(W).fill(-1)
+    for (const e of extents) {
+      const h = hemOf(e)
+      for (let x = 0; x < W; x++) if (h[x] >= 0) hem[x] = hem[x] < 0 ? h[x] : Math.min(hem[x], h[x])
+    }
     const keep = makeCanvas(W, H)
     const kctx = ctx2d(keep)
     kctx.fillStyle = '#000'
