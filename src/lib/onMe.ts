@@ -612,10 +612,16 @@ function collarShape(d: Uint8ClampedArray, W: number, H: number, top: number, x0
     // colonna. Una spalla non ha bordino; una scritta colorata non conta.
     let colTop = top
     while (colTop < ye && d[at(x, colTop) + 3] < 200) colTop++
+    // Il bordino parte dalla cima della colonna (il bordo del colletto, entro l'1,5% dell'altezza) e
+    // scende senza interruzioni lunghe: dopo più del 3% senza chiaro ci si ferma. Così la cerniera
+    // (grigio chiaro) e le scritte sul petto, più in basso e staccate, non contano.
     let low = -1
     for (let y = colTop; contrast && y <= Math.min(ye, colTop + 0.08 * H); y++) {
       const i = at(x, y)
-      if (d[i + 3] >= 200 && light(i)) low = y
+      if (d[i + 3] >= 200 && light(i)) {
+        if (low < 0 && y - colTop > 0.015 * H) break
+        low = y
+      } else if ((low < 0 ? y - colTop > 0.015 * H : y - low > 0.03 * H)) break
     }
     // nelle colonne del collo il colletto arriva almeno alla sua base, e fino al bordino se scende
     // (il bavero aperto); di lato c'è solo dove c'è il bordino (le punte)
@@ -740,7 +746,10 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     if (kind === 'hood') {
       // steso sul colletto, ma mai più del 3% sotto la fine della sua parte stretta: sulle spalle il
       // bordo dei capi sopra è più in basso e il cappuccio ci scenderebbe come due ali
-      end[x - xs] = t >= 0 ? Math.min(t + depth, endRow + 0.03 * H) : own
+      // e il limite è un arco: al centro il 3% sotto, verso i lati risale fino alla fine della parte
+      // stretta (niente bordo dritto dove la pelliccia è bassa)
+      const a = Math.min(1, Math.min(x - xs, xe - x) / Math.max(1, 0.25 * (xe - xs)))
+      end[x - xs] = t >= 0 ? Math.min(t + depth, endRow + 0.03 * H * a * a * (3 - 2 * a)) : own
     } else {
       // colletto, nelle colonne del collo: esce sopra il colletto dei capi sopra senza portarsi dietro
       // il davanti della felpa (al massimo il 3% sotto il loro bordo alto); le punte restano intere
