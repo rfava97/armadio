@@ -453,8 +453,6 @@ type HoodShape = {
   piped?: Uint8Array
   /** colletto morbido (polo): tra le punte si rimette la foto del collo */
   soft?: boolean
-  /** polo: le colonne delle righe del colletto più vicine al collo (sinistra, destra) */
-  stripes?: [number, number]
 }
 
 async function hoodShape(url: string, shoulder: number): Promise<HoodShape | null> {
@@ -782,16 +780,46 @@ function pipedCollar(
   if (!bottom.some((v) => v >= 0)) return null
   // il bordo morbido del bordino (1-2 px oltre l'ultimo pixel trovato)
   for (let x = 0; x < w; x++) if (bottom[x] >= 0) bottom[x] += 2
+  // colletto chiuso (al centro lo scollo finisce entro il 6% sotto la cima; una zip a 3/4 scende di più):
+  // il colletto comprende anche il triangolo che dagli angoli in basso del colletto scende fino alla
+  // cima della zip, al centro
+  const cx = Math.round((x0 + x1) / 2)
+  let vy = top
+  while (vy < y1 && d[at(cx, vy) + 3] < 200) vy++
+  if (vy < Math.min(y1, top + Math.round(0.06 * H))) {
+    let l = -1
+    let r = -1
+    for (let i = 0; i < w; i++) if (bottom[i] >= 0) {
+      if (l < 0) l = i
+      r = i
+    }
+    const zip = vy + Math.round(0.005 * H)
+    const c = cx - c0
+    if (l >= 0 && l < c && r > c) {
+      // gli angoli: la base del colletto (il punto più basso del lato) e un po' più in fuori, dove il
+      // colletto incontra la spalla (1,5% della larghezza)
+      let bl = -1
+      let br = -1
+      for (let i = l; i < c; i++) bl = Math.max(bl, bottom[i])
+      for (let i = c + 1; i <= r; i++) br = Math.max(br, bottom[i])
+      const out = Math.round(0.015 * W)
+      const L = Math.max(0, l - out)
+      const R = Math.min(w - 1, r + out)
+      for (let i = L; i <= R; i++) {
+        const v = i <= c ? bl + ((zip - bl) * (i - L)) / Math.max(1, c - L) : zip + ((br - zip) * (i - c)) / Math.max(1, R - c)
+        if (v > bottom[i]) bottom[i] = v
+      }
+    }
+  }
   const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
   return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped }
 }
 
 /**
- * Colletto di una polo (capo chiaro) con le righe scure lungo il bordo delle punte: in ogni colonna le
- * punte arrivano poco sotto la riga più bassa (il bordo del colletto è appena oltre le righe); tra le
- * righe di sinistra e di destra (le punte che si toccano davanti) il bordo si unisce in linea retta.
- * Così sopra un girocollo si vedono le punte come quando la polo è da sola. null se non ci sono righe
- * da entrambi i lati.
+ * Colletto di una polo (capo chiaro) con le righe scure lungo il bordo delle ali: le ali arrivano appena
+ * sotto la fine delle righe e il bordo basso scende dritto dalle righe alla punta della V davanti, dove
+ * le punte si toccano. È il colletto e basta, come quando la polo è da sola: sopra un girocollo o un
+ * montone si vedono le ali con le righe e le punte. null se non ci sono righe da entrambi i lati.
  */
 function tippedCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x0: number, x1: number, c0: number, c1: number): HoodShape | null {
   const ye = Math.min(H - 1, top + Math.round(0.07 * H))
@@ -817,7 +845,8 @@ function tippedCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x
     return true
   }
   if (!side(0, cx - c0 - 1) || !side(cx - c0, w - 1)) return null
-  const margin = Math.round(0.012 * H)
+  // il bordo del colletto è appena oltre la riga
+  const margin = Math.round(0.004 * H)
   // la riga di ogni lato: la colonna più interna (verso il collo) e la sua fine
   let iL = -1
   for (let i = 0; i < cx - c0; i++) if (low[i] >= 0) iL = i
@@ -841,9 +870,9 @@ function tippedCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x
   while (vy < H - 1 && vy < top + 0.12 * H && atA(cx, vy) < 200) vy++
   const bC = Math.max(bL, bR, Math.min(vy, top + 0.12 * H) + margin)
   // il bordo basso: dalle righe scende dritto verso la punta della V; oltre le righe il bordo bianco
-  // (l'1% della larghezza) risale verso la cima
+  // (0,4% della larghezza) risale verso la cima
   const bottom = new Float32Array(w).fill(-1)
-  const pad = Math.round(0.01 * W)
+  const pad = Math.max(1, Math.round(0.004 * W))
   for (let i = Math.max(0, oL - pad); i <= Math.min(w - 1, oR + pad); i++) {
     if (i < oL) bottom[i] = bL - ((oL - i) / pad) * (bL - top) * 0.5
     else if (i <= iL) bottom[i] = bL
@@ -853,7 +882,7 @@ function tippedCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x
     else bottom[i] = bR - ((i - oR) / pad) * (bR - top) * 0.5
   }
   const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
-  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped, soft: true, stripes: [iL + c0, iR + c0] }
+  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped, soft: true }
 }
 
 /** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
@@ -884,7 +913,7 @@ function shapeOf(url: string, shoulder: number): Promise<HoodShape | null> {
 export async function hoodMask(url: string, shoulder: number, above: string[] = [], size = 1200): Promise<HTMLCanvasElement | null> {
   const shape = await shapeOf(url, shoulder)
   if (!shape) return null
-  const { W, H, top, x0, bottom, kind, endRow, neck, piped, stripes } = shape
+  const { W, H, top, x0, bottom, kind, endRow, neck, piped } = shape
   // bordo alto dei capi sopra, per colonna (alla scala del cappuccio)
   const outerTop = new Float32Array(W).fill(-1)
   for (const e of await Promise.all(above.map(layerExtent))) {
@@ -892,24 +921,6 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     for (let x = 0; x < W; x++) {
       const t = e.colTop[Math.min(e.colTop.length - 1, Math.floor(x * k))]
       if (t >= 0) outerTop[x] = outerTop[x] < 0 ? t / k : Math.min(outerTop[x], t / k)
-    }
-  }
-  // il capo sopra è chiuso al centro appena sotto il suo bordo (uno scollo tondo, non una V o
-  // un'apertura): conta per le punte di una polo
-  let crew = false
-  if (shape.soft && above.length && neck) {
-    const cx = Math.round((neck[0] + neck[1]) / 2)
-    const t = outerTop[cx]
-    if (t >= 0) {
-      const ob = await bitmapOf(above[above.length - 1], 400)
-      const oc = makeCanvas(ob.width, ob.height)
-      const octx = ctx2d(oc)
-      octx.drawImage(ob, 0, 0)
-      ob.close()
-      const f = oc.width / W
-      const px = octx.getImageData(Math.round(cx * f), Math.round((t + 0.025 * H) * f), 1, 1).data
-      crew = px[3] > 200
-      releaseCanvas(oc)
     }
   }
   // Collo alto: in piedi davanti al colletto dei capi sopra, intero fino alla sua base.
@@ -958,24 +969,6 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       // girocollo) non resta un buco con la pelle
       const inNeck = neck && x >= neck[0] && x <= neck[1] && !piped?.[x - x0]
       end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(Math.max(own, t + 0.012 * H), t + 0.03 * H) : own
-      // polo sotto uno scollo tondo (girocollo): ai lati il colletto non copre lo scollo, si ferma appena
-      // sotto il suo bordo alto; al centro le punte scendono sopra lo scollo
-      if (crew && t >= 0 && end[x - xs] >= 0 && neck) {
-        // al centro le punte davanti: un V sotto il bordo dello scollo, profondo il 2,5% dell'altezza e
-        // largo il 5% della larghezza per lato
-        const cap = t + 0.012 * H
-        const tip = Math.max(0, 1 - Math.abs(x - (neck[0] + neck[1]) / 2) / (0.05 * W))
-        let keep = cap + 0.025 * H * tip
-        // le ali del colletto con le righe restano intere fino alla fine delle righe; verso il collo
-        // risalgono al bordo dello scollo in un tratto del 4% della larghezza
-        if (stripes) {
-          const inside = x > stripes[0] && x < stripes[1]
-          const dist = inside ? Math.min(x - stripes[0], stripes[1] - x) : 0
-          const k = Math.max(0, 1 - dist / (0.04 * W))
-          keep = Math.max(keep, cap + (end[x - xs] - cap) * k)
-        }
-        end[x - xs] = Math.min(end[x - xs], keep)
-      }
     }
   }
   if (kind === 'hood') {
