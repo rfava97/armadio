@@ -800,10 +800,17 @@ export async function coverMask(above: string[], inside = false, self?: string):
   } else if (self) {
     const own = await layerExtent(self)
     const k = own.colBottom.length / W
+    // l'orlo più basso nei dintorni (5% della larghezza per lato): sui fianchi l'orlo dei capi sopra
+    // risale con il loro bordo, e uno strato sotto un po' più largo spunterebbe a pezzetti ai lati
+    // (o nell'apertura di una giacca, sotto il lembo); conta quanto esce sotto l'orlo vero, e si taglia
+    // lì (sopra, fuori dai capi, lo nasconde già la regola per righe)
+    const r = Math.round(0.05 * W)
     for (let x = 0; x < W; x++) {
       if (hem[x] < 0) continue
+      let low = hem[x]
+      for (let j = Math.max(0, x - r); j <= Math.min(W - 1, x + r); j++) if (hem[j] > low) low = hem[j]
       const b = own.colBottom[Math.min(own.colBottom.length - 1, Math.floor(x * k))] / k
-      if (b > hem[x] && b - hem[x] < 0.02 * H) limit[x] = hem[x] + 1
+      if (b > hem[x] && b - low < 0.02 * H) limit[x] = low + 1
     }
   }
   if (inside || self) {
