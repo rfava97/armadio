@@ -453,6 +453,8 @@ type HoodShape = {
   piped?: Uint8Array
   /** colletto morbido (polo): tra le punte si rimette la foto del collo */
   soft?: boolean
+  /** polo: le colonne delle righe del colletto più vicine al collo (sinistra, destra) */
+  stripes?: [number, number]
 }
 
 async function hoodShape(url: string, shoulder: number): Promise<HoodShape | null> {
@@ -622,7 +624,10 @@ function collarShape(
     }
   const contrast = opaque > 0 && pale / opaque < 0.4
   if (contrast) {
-    const shape = pipedCollar(d, W, H, top, x0, x1, c0, c1, light)
+    // se il bordino non chiude il colletto in basso (la zona scappa nella felpa), il colletto è al
+    // massimo alto il 4,5%: si riempie fino a lì
+    const shape =
+      pipedCollar(d, W, H, top, x0, x1, c0, c1, light, 0.12, true) ?? pipedCollar(d, W, H, top, x0, x1, c0, c1, light, 0.045, false)
     if (shape) return shape
   }
   if (onlyPiped) return null
@@ -717,8 +722,12 @@ function pipedCollar(
   c0: number,
   c1: number,
   light: (i: number) => boolean,
+  /** fin dove cercare, in frazione dell'altezza sotto la cima */
+  reach: number,
+  /** true: se la zona arriva fin lì il bordino non chiude il colletto (null); false: si taglia lì */
+  strict: boolean,
 ): HoodShape | null {
-  const y1 = Math.min(H - 1, top + Math.round(0.12 * H))
+  const y1 = Math.min(H - 1, top + Math.round(reach * H))
   const w = c1 - c0 + 1
   const rows = y1 - top + 1
   const seen = new Uint8Array(w * rows)
@@ -728,9 +737,9 @@ function pipedCollar(
   let head = 0
   let tail = 0
   const at = (x: number, y: number) => (y * W + x) * 4
-  // il bordino fa parte del colletto e lo chiude: si attraversa solo per il suo spessore (al massimo
-  // l'1,2% dell'altezza), così si prende tutto anche quando è largo ma non si scappa lungo le righe
-  const thick = Math.max(2, Math.min(250, Math.round(0.012 * H)))
+  // il bordino fa parte del colletto e lo chiude: si attraversa per al massimo il 3% dell'altezza, così
+  // si prende tutto anche quando è largo o scende lungo il colletto, ma non si scappa lungo le righe
+  const thick = Math.max(2, Math.min(250, Math.round(0.03 * H)))
   const visit = (x: number, y: number, from: number) => {
     if (x < c0 || x > c1 || y < top || y > y1) return
     const k = (y - top) * w + (x - c0)
@@ -767,7 +776,7 @@ function pipedCollar(
     if (!seen[k]) continue
     const x = k % w
     const y = Math.floor(k / w) + top
-    if (y >= y1) return null
+    if (y >= y1 && strict) return null
     if (y > bottom[x]) bottom[x] = y
   }
   if (!bottom.some((v) => v >= 0)) return null
@@ -844,7 +853,7 @@ function tippedCollar(d: Uint8ClampedArray, W: number, H: number, top: number, x
     else bottom[i] = bR - ((i - oR) / pad) * (bR - top) * 0.5
   }
   const piped = Uint8Array.from(bottom, (v) => (v >= 0 ? 1 : 0))
-  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped, soft: true }
+  return { W, H, top, x0: c0, bottom, kind: 'collar', endRow: top, neck: [x0, x1], piped, soft: true, stripes: [iL + c0, iR + c0] }
 }
 
 /** quanto il cappuccio scende sopra il colletto dei capi esterni: tirato fuori e steso sul colletto */
@@ -875,7 +884,7 @@ function shapeOf(url: string, shoulder: number): Promise<HoodShape | null> {
 export async function hoodMask(url: string, shoulder: number, above: string[] = [], size = 1200): Promise<HTMLCanvasElement | null> {
   const shape = await shapeOf(url, shoulder)
   if (!shape) return null
-  const { W, H, top, x0, bottom, kind, endRow, neck, piped } = shape
+  const { W, H, top, x0, bottom, kind, endRow, neck, piped, stripes } = shape
   // bordo alto dei capi sopra, per colonna (alla scala del cappuccio)
   const outerTop = new Float32Array(W).fill(-1)
   for (const e of await Promise.all(above.map(layerExtent))) {
@@ -952,10 +961,20 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       // polo sotto uno scollo tondo (girocollo): ai lati il colletto non copre lo scollo, si ferma appena
       // sotto il suo bordo alto; al centro le punte scendono sopra lo scollo
       if (crew && t >= 0 && end[x - xs] >= 0 && neck) {
-        // le punte: un V sotto il bordo dello scollo, profondo il 2,5% dell'altezza al centro e largo il
-        // 5% della larghezza per lato
+        // al centro le punte davanti: un V sotto il bordo dello scollo, profondo il 2,5% dell'altezza e
+        // largo il 5% della larghezza per lato
+        const cap = t + 0.012 * H
         const tip = Math.max(0, 1 - Math.abs(x - (neck[0] + neck[1]) / 2) / (0.05 * W))
-        end[x - xs] = Math.min(end[x - xs], t + 0.012 * H + 0.025 * H * tip)
+        let keep = cap + 0.025 * H * tip
+        // le ali del colletto con le righe restano intere fino alla fine delle righe; verso il collo
+        // risalgono al bordo dello scollo in un tratto del 4% della larghezza
+        if (stripes) {
+          const inside = x > stripes[0] && x < stripes[1]
+          const dist = inside ? Math.min(x - stripes[0], stripes[1] - x) : 0
+          const k = Math.max(0, 1 - dist / (0.04 * W))
+          keep = Math.max(keep, cap + (end[x - xs] - cap) * k)
+        }
+        end[x - xs] = Math.min(end[x - xs], keep)
       }
     }
   }
