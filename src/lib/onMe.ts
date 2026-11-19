@@ -252,8 +252,9 @@ export async function composeOnMe(
   // cappucci degli strati sotto, sopra i capi esterni
   if (shoulderY !== undefined) {
     const line = layerRow(shoulderY, w / h)
+    // solo lo strato subito sotto il più esterno: con un capo in mezzo il colletto resta sotto
     for (const [k, u] of tops.slice(0, -1).entries()) {
-      if (collarIn[k]) continue
+      if (collarIn[k] || k !== tops.length - 2) continue
       const hood = await hoodMask(u, line, tops.slice(k + 1))
       if (!hood) continue
       const l = await load(u)

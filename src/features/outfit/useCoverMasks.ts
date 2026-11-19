@@ -10,7 +10,9 @@ const NONE: Covers = { masks: [], hoods: [], kinds: [] }
  * Strati del busto "su di me" (dal più interno al più esterno):
  * - masks: per ogni strato, dove resta visibile sotto quelli sopra (data URL per la mask-image CSS;
  *   l'ultimo non ne ha);
- * - hoods: per gli strati sotto con un cappuccio, la sua forma (data URL), da disegnare sopra i capi esterni.
+ * - hoods: per lo strato subito sotto il più esterno, se ha un cappuccio o un collo alto, la sua forma
+ *   (data URL), da disegnare sopra il capo esterno. Più in basso no: il colletto di una polo sotto un
+ *   girocollo resta sotto la giacca (spunta, se c'è, quello del capo in mezzo).
  * `shoulder`: riga delle spalle nel fotogramma dei livelli (senza, niente cappucci).
  * - kinds: per gli strati sotto, se hanno un cappuccio o un collo alto che può spuntare (anche se tenuto dentro).
  * `inside`: per ogni strato, se è tenuto dentro i capi sopra (non esce sotto il loro orlo).
@@ -38,7 +40,7 @@ export function useCoverMasks(urls: string[], shoulder: number | undefined, insi
       ),
       Promise.all(
         list.map(async (u, i) => {
-          if (top === undefined || i === list.length - 1 || collars[i] === '1') return undefined
+          if (top === undefined || i !== list.length - 2 || collars[i] === '1') return undefined
           const c = await hoodMask(u, top, list.slice(i + 1))
           if (!c) return undefined
           const url = c.toDataURL('image/png')
@@ -46,7 +48,7 @@ export function useCoverMasks(urls: string[], shoulder: number | undefined, insi
           return url
         }),
       ),
-      Promise.all(list.map((u, i) => (top === undefined || i === list.length - 1 ? null : hoodKind(u, top)))),
+      Promise.all(list.map((u, i) => (top === undefined || i !== list.length - 2 ? null : hoodKind(u, top)))),
     ])
       .then(([masks, hoods, kinds]) => !cancelled && setCovers({ key, masks, hoods, kinds }))
       .catch((e) => console.error(e))
