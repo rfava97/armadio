@@ -247,6 +247,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     shoulderLine,
     tops.map((t) => (state.outfit.inside ?? []).includes(t.id)),
     tops.map((t) => (state.outfit.collarIn ?? []).includes(t.id)),
+    onMe?.url,
   )
   const collarKey = tops.flatMap((t, i) => (covers.kinds[i] ? [`${t.id}:${covers.kinds[i]}`] : [])).join(',')
   useEffect(() => {
@@ -270,6 +271,9 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
       const m = covers.masks[k]
       items.push({ key: `busto-${i}`, g, zone: 'busto', layer: i, box, z: 20 + n, src, mask: m && `url(${m})` })
       // cappuccio tirato fuori: solo la sua forma, sopra tutti i capi
+      // tra le punte di un colletto aperto (polo): la foto, non il bordo del capo sopra
+      const hole = covers.holes[k]
+      if (hole) items.push({ key: `scollo-${i}`, g, zone: 'busto', layer: i, box, z: 34, src: hole, still: true })
       const hood = covers.hoods[k]
       if (hood) {
         items.push({ key: `cappuccio-${i}`, g, zone: 'busto', layer: i, box, z: 35, src, still: true, mask: `url(${hood})` })

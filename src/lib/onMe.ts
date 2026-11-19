@@ -255,6 +255,11 @@ export async function composeOnMe(
     // solo lo strato subito sotto il più esterno: con un capo in mezzo il colletto resta sotto
     for (const [k, u] of tops.slice(0, -1).entries()) {
       if (collarIn[k] || k !== tops.length - 2) continue
+      const hole = await collarHole(bodyUrl, u, line, tops.slice(k + 1))
+      if (hole) {
+        ctx.drawImage(hole, -pad, -pad, w + pad * 2, h + pad * 2)
+        releaseCanvas(hole)
+      }
       const hood = await hoodMask(u, line, tops.slice(k + 1))
       if (!hood) continue
       const l = await load(u)
@@ -746,9 +751,9 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     if (kind === 'hood') {
       // steso sul colletto, ma mai più del 3% sotto la fine della sua parte stretta: sulle spalle il
       // bordo dei capi sopra è più in basso e il cappuccio ci scenderebbe come due ali
-      // e il limite è un arco: al centro il 3% sotto, verso i lati risale fino alla fine della parte
-      // stretta (niente bordo dritto dove la pelliccia è bassa)
-      const a = Math.min(1, Math.min(x - xs, xe - x) / Math.max(1, 0.25 * (xe - xs)))
+      // e il limite è un arco su tutta la larghezza: al centro il 3% sotto, verso i lati risale fino
+      // alla fine della parte stretta (niente bordo dritto dove la pelliccia è bassa)
+      const a = Math.min(1, Math.min(x - xs, xe - x) / Math.max(1, 0.5 * (xe - xs)))
       end[x - xs] = t >= 0 ? Math.min(t + depth, endRow + 0.03 * H * a * a * (3 - 2 * a)) : own
     } else {
       // colletto, nelle colonne del collo: esce sopra il colletto dei capi sopra senza portarsi dietro
@@ -758,6 +763,22 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
       // girocollo) non resta un buco con la pelle
       const inNeck = neck && x >= neck[0] && x <= neck[1] && !piped?.[x - x0]
       end[x - xs] = inNeck && t >= 0 && own >= 0 ? Math.min(Math.max(own, t + 0.012 * H), t + 0.03 * H) : own
+    }
+  }
+  if (kind === 'hood') {
+    // l'orlo del cappuccio è una curva unica: via angoli e tratti dritti (media sul 4% della larghezza)
+    const r = Math.max(2, Math.round(0.04 * W))
+    const src = Float32Array.from(end)
+    for (let i = 0; i < end.length; i++) {
+      if (src[i] < 0) continue
+      let sum = 0
+      let n = 0
+      for (let j = Math.max(0, i - r); j <= Math.min(end.length - 1, i + r); j++) {
+        if (src[j] < 0) continue
+        sum += src[j]
+        n++
+      }
+      end[i] = sum / n
     }
   }
   if (kind === 'collar' && neck) {
@@ -807,6 +828,47 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
     ctx.fillRect(X, b - 1, 1, 1)
   }
   return c
+}
+
+/**
+ * Collo alto aperto (le punte di una polo) sopra un capo con lo scollo più basso (un girocollo): tra le
+ * punte lo strato è aperto e lì si vedrebbe il bordo del capo sopra, come un triangolo scuro sotto il
+ * mento. Qui la foto del corpo ritagliata su quel buco (dove c'è il colletto ma lo strato è vuoto), nel
+ * fotogramma dei livelli: si disegna sopra i capi esterni, sotto il colletto. Solo per un colletto senza
+ * bordino a contrasto. null se non serve.
+ */
+export async function collarHole(bodyUrl: string, url: string, shoulder: number, above: string[], size = 1200): Promise<HTMLCanvasElement | null> {
+  // solo un colletto senza bordino a contrasto (polo, camicia): con le punte del bavero (una felpa
+  // con la zip) tra le punte c'è il colletto dei capi sopra, che resta
+  const shape = await shapeOf(url, shoulder)
+  if (shape?.kind !== 'collar' || shape.piped?.some((v) => v)) return null
+  const mask = await hoodMask(url, shoulder, above, size)
+  if (!mask) return null
+  const W = mask.width
+  const H = mask.height
+  const ctx = ctx2d(mask)
+  ctx.globalAlpha = 1
+  // via dove lo strato c'è: resta il buco tra le punte
+  const layer = await bitmapOf(url, size)
+  ctx.globalCompositeOperation = 'destination-out'
+  ctx.drawImage(layer, 0, 0, W, H)
+  layer.close()
+  const d = ctx.getImageData(0, 0, W, H).data
+  let n = 0
+  for (let i = 3; i < d.length; i += 4) if (d[i] > 128) n++
+  if (n < 0.0004 * W * H) {
+    releaseCanvas(mask)
+    return null
+  }
+  // la foto, al suo posto nel fotogramma dei livelli (con il margine)
+  const body = await bitmapOf(bodyUrl, size)
+  const margin = ON_ME_PAD * Math.max(body.width, body.height)
+  const pad = margin * (W / (body.width + 2 * margin))
+  ctx.globalCompositeOperation = 'source-in'
+  ctx.drawImage(body, pad, pad, W - 2 * pad, H - 2 * pad)
+  ctx.globalCompositeOperation = 'source-over'
+  body.close()
+  return mask
 }
 
 /**

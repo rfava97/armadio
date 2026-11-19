@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { coverMask, hoodKind, hoodMask } from '@/lib/onMe'
+import { collarHole, coverMask, hoodKind, hoodMask } from '@/lib/onMe'
 import { releaseCanvas } from '@/lib/image/canvas'
 
 type Kind = 'hood' | 'collar' | null
-type Covers = { masks: (string | undefined)[]; hoods: (string | undefined)[]; kinds: Kind[] }
-const NONE: Covers = { masks: [], hoods: [], kinds: [] }
+type Covers = { masks: (string | undefined)[]; hoods: (string | undefined)[]; holes: (string | undefined)[]; kinds: Kind[] }
+const NONE: Covers = { masks: [], hoods: [], holes: [], kinds: [] }
 
 /**
  * Strati del busto "su di me" (dal più interno al più esterno):
@@ -14,19 +14,28 @@ const NONE: Covers = { masks: [], hoods: [], kinds: [] }
  *   (data URL), da disegnare sopra il capo esterno. Più in basso no: il colletto di una polo sotto un
  *   girocollo resta sotto la giacca (spunta, se c'è, quello del capo in mezzo).
  * `shoulder`: riga delle spalle nel fotogramma dei livelli (senza, niente cappucci).
+ * - holes: per lo stesso strato, se è un colletto aperto (polo), la foto del corpo tra le punte
+ *   (data URL, immagine nel fotogramma dei livelli), da disegnare sopra i capi esterni e sotto il colletto.
+ * `body`: la foto del corpo (senza, niente holes).
  * - kinds: per gli strati sotto, se hanno un cappuccio o un collo alto che può spuntare (anche se tenuto dentro).
  * `inside`: per ogni strato, se è tenuto dentro i capi sopra (non esce sotto il loro orlo).
  * `collarIn`: per ogni strato, se il colletto o il cappuccio resta sotto i capi sopra.
  */
-export function useCoverMasks(urls: string[], shoulder: number | undefined, inside: boolean[] = [], collarIn: boolean[] = []): Covers {
+export function useCoverMasks(
+  urls: string[],
+  shoulder: number | undefined,
+  inside: boolean[] = [],
+  collarIn: boolean[] = [],
+  body?: string,
+): Covers {
   const bits = (a: boolean[]) => a.map((v) => (v ? 1 : 0)).join('')
-  const key = `${shoulder ?? ''}|${bits(inside)}|${bits(collarIn)}\n${urls.join('\n')}`
+  const key = `${shoulder ?? ''}|${bits(inside)}|${bits(collarIn)}|${body ?? ''}\n${urls.join('\n')}`
   const [covers, setCovers] = useState<{ key: string } & Covers>({ key: '', ...NONE })
   useEffect(() => {
     const [head, ...list] = key.split('\n')
     if (list.length < 2) return
     let cancelled = false
-    const [line, flags, collars = ''] = head.split('|')
+    const [line, flags, collars, bodyUrl] = head.split('|')
     const top = line ? Number(line) : undefined
     Promise.all([
       Promise.all(
@@ -48,9 +57,19 @@ export function useCoverMasks(urls: string[], shoulder: number | undefined, insi
           return url
         }),
       ),
+      Promise.all(
+        list.map(async (u, i) => {
+          if (top === undefined || !bodyUrl || i !== list.length - 2 || collars[i] === '1') return undefined
+          const c = await collarHole(bodyUrl, u, top, list.slice(i + 1))
+          if (!c) return undefined
+          const url = c.toDataURL('image/png')
+          releaseCanvas(c)
+          return url
+        }),
+      ),
       Promise.all(list.map((u, i) => (top === undefined || i !== list.length - 2 ? null : hoodKind(u, top)))),
     ])
-      .then(([masks, hoods, kinds]) => !cancelled && setCovers({ key, masks, hoods, kinds }))
+      .then(([masks, hoods, holes, kinds]) => !cancelled && setCovers({ key, masks, hoods, holes, kinds }))
       .catch((e) => console.error(e))
     return () => {
       cancelled = true
