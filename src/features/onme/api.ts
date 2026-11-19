@@ -73,6 +73,14 @@ export function useWears() {
  * Il modo con cui il capo appare nel camerino: quello scelto se esiste, altrimenti il primo pronto,
  * altrimenti il primo.
  */
+/** un modo "chiuso" (Chiusa, Chiusa 3/4): un capo chiuso tiene chiusi anche quelli sotto */
+export const isClosedWear = (w: Wear | undefined) => !!w && /chius/i.test(w.name)
+
+/** il modo del tutto chiuso di un capo ("Chiusa"), se è pronto su di te */
+export function fullyClosedWear(wears: Wear[] | undefined, bodyPath: string | null | undefined) {
+  return wears?.find((w) => /^\s*chius[ao]\s*$/i.test(w.name) && isWearReady(w, bodyPath))
+}
+
 export function chosenWear(wears: Wear[] | undefined, chosenId: string | undefined, bodyPath: string | null | undefined) {
   if (!wears?.length) return undefined
   return wears.find((w) => w.id === chosenId) ?? wears.find((w) => isWearReady(w, bodyPath)) ?? wears[0]

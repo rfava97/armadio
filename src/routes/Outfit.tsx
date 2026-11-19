@@ -14,6 +14,8 @@ import { TryOnSheet } from '@/features/outfit/TryOnSheet'
 import { useCamerinoSettings, type CamerinoView } from '@/features/outfit/settings'
 import {
   chosenWear,
+  fullyClosedWear,
+  isClosedWear,
   isWearReady,
   onMeCategory,
   fashnCan,
@@ -108,7 +110,22 @@ export default function Outfit() {
   const update = (fn: (s: CamerinoState) => CamerinoState) => setState((s) => (s ? fn(s) : s))
 
   /** il modo con cui ogni capo è indossato nel camerino (scelto, o il primo pronto) */
-  const wearOf = (g: GarmentWithThumb): Wear | undefined => chosenWear(wearsMap?.get(g.id), state?.outfit.wears?.[g.id], bodyPath)
+  const chosenOf = (g: GarmentWithThumb): Wear | undefined => chosenWear(wearsMap?.get(g.id), state?.outfit.wears?.[g.id], bodyPath)
+  // se un capo del busto è chiuso, quelli sotto sono chiusi anche loro (una felpa aperta sotto un
+  // montone chiuso si vede come "Chiusa"): la scelta salvata resta, vale di nuovo riaprendo il capo sopra
+  const forcedClosed = new Map<string, Wear>()
+  {
+    let closedAbove = false
+    for (const id of [...(state?.outfit.busto ?? [])].reverse()) {
+      const g = id ? byId.get(id) : undefined
+      if (!g) continue
+      const base = chosenOf(g)
+      const closed = closedAbove ? fullyClosedWear(wearsMap?.get(g.id), bodyPath) : undefined
+      if (closed && closed.id !== base?.id) forcedClosed.set(g.id, closed)
+      if (isClosedWear(closed ?? base)) closedAbove = true
+    }
+  }
+  const wearOf = (g: GarmentWithThumb): Wear | undefined => forcedClosed.get(g.id) ?? chosenOf(g)
 
   // capi del busto e delle gambe: quelli che si possono vedere su di te
   const worn = state
@@ -367,9 +384,10 @@ export default function Outfit() {
                       type="button"
                       role="radio"
                       aria-checked={activeWear?.id === w.id}
+                      disabled={forcedClosed.has(activeGarment.id) && activeWear?.id !== w.id}
                       onClick={() => update((s) => setWear(s, activeGarment.id, w.id))}
                       className={cn(
-                        'h-8 shrink-0 rounded-full px-3 text-caption font-semibold transition-colors',
+                        'h-8 shrink-0 rounded-full px-3 text-caption font-semibold transition-colors disabled:opacity-40',
                         activeWear?.id === w.id ? 'bg-navy text-on-accent' : 'bg-surface-muted text-fg',
                       )}
                     >
@@ -377,6 +395,9 @@ export default function Outfit() {
                     </button>
                   ))}
                 </div>
+              )}
+              {forcedClosed.has(activeGarment.id) && (
+                <p className="shrink-0 text-caption text-fg-muted">Il capo sopra è chiuso</p>
               )}
               {collarKind && (
                 <button
