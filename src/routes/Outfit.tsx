@@ -43,6 +43,7 @@ import {
   candidatesFor,
   getActiveId,
   initialState,
+  layerOrder,
   loadState,
   neighbor,
   removeLayer,
@@ -191,7 +192,7 @@ export default function Outfit() {
   const savedTops = (state?.outfit.busto ?? [])
     .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
     .filter((x): x is { g: GarmentWithThumb; i: number } => !!x.g && garmentLayers.has(x.g.id))
-    .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
+    .sort((a, b) => layerOrder(a.g) - layerOrder(b.g) || a.i - b.i)
     .map((x) => x.g)
 
   const activeLayerUrl = activeWear && isWearReady(activeWear, bodyPath) ? layers.data?.get(activeWear.id) : undefined
@@ -525,6 +526,7 @@ export default function Outfit() {
               inside={savedTops.map((g) => !!state.outfit.inside?.includes(g.id))}
               collarIn={savedTops.map((g) => !!state.outfit.collarIn?.includes(g.id))}
               retouch={savedTops.map((g) => garmentRetouch.get(g.id) ?? {})}
+              vest={savedTops.map((g) => g.category === 'gilet')}
               topsFrom={
                 (state.outfit.piedi && garmentLayers.get(state.outfit.piedi) ? 1 : 0) +
                 (state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0)
@@ -543,13 +545,13 @@ export default function Outfit() {
               state.outfit.busto
                 .map((id) => (id ? byId.get(id) : undefined))
                 .filter((g): g is GarmentWithThumb => !!g)
-                .sort((a, b) => b.layer_rank - a.layer_rank)[0]
+                .sort((a, b) => layerOrder(b) - layerOrder(a))[0]
             }
             bottom={state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined}
             layers={state.outfit.busto
               .map((id) => (id ? byId.get(id) : undefined))
               .filter((g): g is GarmentWithThumb => !!g)
-              .sort((a, b) => a.layer_rank - b.layer_rank)}
+              .sort((a, b) => layerOrder(a) - layerOrder(b))}
             shoes={state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined}
             fitPhotos={fitPhotos}
             state={state}

@@ -85,8 +85,13 @@ export function sizeRules(s: WearStyle, category: string, who: 'mannequin' | 'mo
       out.push(`The hem ends at the ankles${keep('feet')}.`)
     }
   } else {
-    out.push('Shoulder seams exactly on the shoulder points' + (s.oversize ? ', or slightly dropped.' : '.'))
-    if (!s.rolled) out.push(`The cuffs end exactly at the ${who} wrists${green ? ': the whole green hand and a little green wrist must stay visible' : ''}.`)
+    if (category === 'gilet') {
+      // senza maniche: le braccia restano scoperte (sotto si vedranno le maniche del capo sotto)
+      out.push(
+        `Sleeveless vest: NO sleeves at all, the armholes end at the shoulder points${green ? ': the whole green arms, from the shoulders to the hands, must stay visible' : ' and the arms stay visible'}.`,
+      )
+    } else out.push('Shoulder seams exactly on the shoulder points' + (s.oversize ? ', or slightly dropped.' : '.'))
+    if (!s.rolled && category !== 'gilet') out.push(`The cuffs end exactly at the ${who} wrists${green ? ': the whole green hand and a little green wrist must stay visible' : ''}.`)
     if (s.cropped) {
       out.push(`Cropped: the hem ends a few centimetres above the ${who} waist${green ? ', the green belly just above the waist stays visible' : ''}.`)
     } else if (category === 'camicie') {
@@ -107,6 +112,7 @@ export const WEAR_SUGGESTIONS: Record<string, string[]> = {
   canotte: ['Regular', 'Cropped'],
   camicie: ['Chiusa', 'Aperta', 'Oversize'],
   felpe_maglioni: ['Chiusa', 'Aperta', 'Cropped', 'Oversize'],
+  gilet: ['Chiusa', 'Aperta'],
   giacche_cappotti: ['Chiusa', 'Aperta'],
   pantaloni: ['Regular', 'Baggy', 'Slim'],
   jeans: ['Regular', 'Baggy', 'Slim'],

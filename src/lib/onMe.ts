@@ -220,6 +220,8 @@ export async function composeOnMe(
   collarIn: boolean[] = [],
   /** per ogni strato del busto: ritocchi a mano di colletto e orlo */
   retouch: { collar?: string; hem?: string }[] = [],
+  /** per ogni strato del busto: è un gilet (non nasconde le maniche dello strato sotto) */
+  vest: boolean[] = [],
 ): Promise<Blob> {
   const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
   const body = await load(bodyUrl)
@@ -236,7 +238,7 @@ export async function composeOnMe(
   for (const [n, u] of layerUrls.entries()) {
     const l = await load(u)
     const k = n - topsFrom
-    const cover = k >= 0 ? await coverMask(tops.slice(k + 1), !!inside[k], tops[k], retouch[k]?.hem) : null
+    const cover = k >= 0 ? await coverMask(tops.slice(k + 1), !!inside[k], tops[k], retouch[k]?.hem, vest.slice(k + 1)) : null
     if (cover) {
       // lo strato coperto, ritagliato dove esce dai capi sopra
       const t = makeCanvas(l.width, l.height)
@@ -1189,15 +1191,22 @@ export async function coverMask(
   self?: string,
   /** orlo ritoccato a mano: le parti colorate si nascondono (solo quando ci sono capi sopra) */
   hemRetouch?: string,
+  /**
+   * per ogni capo sopra: è un gilet (senza maniche). Un gilet non nasconde niente fuori dalla sua
+   * sagoma (le maniche dello strato sotto si vedono): conta solo per l'orlo.
+   */
+  vest: boolean[] = [],
 ): Promise<HTMLCanvasElement | null> {
   if (!above.length) return null
   const extents = await Promise.all(above.map(layerExtent))
-  const masks = extents.map((e) => e.mask)
-  const c = makeCanvas(masks[0].width, masks[0].height)
+  const masks = extents.flatMap((e, j) => (vest[j] ? [] : [e.mask]))
+  const c = makeCanvas(extents[0].mask.width, extents[0].mask.height)
   const ctx = ctx2d(c)
-  ctx.drawImage(masks[0], 0, 0)
+  // solo gilet sopra: lo strato si vede tutto (il gilet lo copre dove c'è)
+  ctx.fillStyle = '#000'
+  ctx.fillRect(0, 0, c.width, c.height)
   ctx.globalCompositeOperation = 'destination-in'
-  for (const m of masks.slice(1)) ctx.drawImage(m, 0, 0, c.width, c.height)
+  for (const m of masks) ctx.drawImage(m, 0, 0, c.width, c.height)
   const W = c.width
   const H = c.height
   const hem = hemOf(extents, W)

@@ -57,6 +57,15 @@ export function useSignedImage(path: string | null | undefined) {
 
 export type GarmentFields = { name: string; category: Category; color: string | null; tags: string[] }
 
+/** Il database non conosce ancora la categoria (migrazione non eseguita): lo dico in chiaro. */
+function categoryError(e: unknown): unknown {
+  const msg = (e as { message?: string } | null)?.message ?? ''
+  if (/garment_category|invalid input value for enum/i.test(msg)) {
+    return new Error('Manca la migrazione 007_categoria_gilet.sql: eseguila nel SQL Editor di Supabase.')
+  }
+  return e
+}
+
 export function useCreateGarment() {
   const qc = useQueryClient()
   const { session } = useAuth()
@@ -89,7 +98,7 @@ export function useCreateGarment() {
       })
       if (error) {
         await store.remove([imagePath, thumbPath])
-        throw error
+        throw categoryError(error)
       }
       return id
     },
@@ -115,7 +124,7 @@ export function useUpdateGarment() {
           tags: f.tags,
         })
         .eq('id', id)
-      if (error) throw error
+      if (error) throw categoryError(error)
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['garments'] })

@@ -15,7 +15,7 @@ import { garmentImageUrl } from '@/lib/tryon'
 const BUCKET = 'renders'
 const SIGNED_TTL = 60 * 60
 
-const TOPS: Category[] = ['maglie', 'camicie', 'canotte', 'felpe_maglioni', 'giacche_cappotti']
+const TOPS: Category[] = ['maglie', 'camicie', 'canotte', 'felpe_maglioni', 'gilet', 'giacche_cappotti']
 const BOTTOMS: Category[] = ['pantaloni', 'jeans']
 
 /** Busto, gambe e scarpe si possono vedere "su di me" (gli accessori no). */

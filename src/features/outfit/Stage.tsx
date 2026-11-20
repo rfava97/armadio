@@ -6,7 +6,7 @@ import type { Category } from '@/lib/garments'
 import { layerRow, ON_ME_PAD } from '@/lib/onMe'
 import { useTopShapes } from '@/lib/image/topShape'
 import { useCoverMasks } from './useCoverMasks'
-import { getActiveId, neighbor, type CamerinoState, type StageZone } from './state'
+import { getActiveId, layerOrder, neighbor, type CamerinoState, type StageZone } from './state'
 
 type Box = { left: number; top: number; width: number; height: number }
 
@@ -47,6 +47,7 @@ const LENGTH_CM: Partial<Record<Category, number>> = {
   maglie: 70,
   camicie: 78,
   felpe_maglioni: 68,
+  gilet: 64,
   giacche_cappotti: 76,
   pantaloni: 104,
   jeans: 104,
@@ -61,6 +62,7 @@ const CHEST_CM: Partial<Record<Category, number>> = {
   maglie: 52,
   camicie: 54,
   felpe_maglioni: 58,
+  gilet: 56,
   giacche_cappotti: 60,
 }
 /** quote verticali sul tavolo (cm dall'alto): spalle, inizio pantaloni, inizio scarpe, altezza totale */
@@ -236,7 +238,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
   const busto = state.outfit.busto
     .map((id, i) => ({ g: id ? byId.get(id) : undefined, i }))
     .filter((x): x is { g: GarmentWithThumb; i: number } => !!x.g)
-    .sort((a, b) => a.g.layer_rank - b.g.layer_rank || a.i - b.i)
+    .sort((a, b) => layerOrder(a.g) - layerOrder(b.g) || a.i - b.i)
   const gambe = state.outfit.gambe ? byId.get(state.outfit.gambe) : undefined
   const piedi = state.outfit.piedi ? byId.get(state.outfit.piedi) : undefined
   const shapes = useTopShapes(busto.map(({ g }) => ({ id: g.id, url: g.thumbUrl })))
@@ -251,6 +253,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     tops.map((t) => (state.outfit.collarIn ?? []).includes(t.id)),
     onMe?.url,
     tops.map((t) => onMe?.retouch?.get(t.id) ?? {}),
+    tops.map((t) => byId.get(t.id)?.category === 'gilet'),
   )
   const collarKey = tops.flatMap((t, i) => (covers.kinds[i] ? [`${t.id}:${covers.kinds[i]}`] : [])).join(',')
   useEffect(() => {

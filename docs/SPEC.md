@@ -11,7 +11,7 @@ Navigazione: bottom bar con 3 tab → **Armadio** (icona gruccia) · **Outfit** 
 ### 1.1 Lista capi
 - Header: titolo "Il tuo armadio", pulsante cerca (icona lente), pulsante "+" primario (circolare, accent).
 - Tab categorie scorrevoli orizzontalmente, con indicatore sottolineato sotto la tab attiva:
-  `Tutto · Maglie · Camicie · Canotte · Felpe e Maglioni · Giacche e Cappotti · Pantaloni · Jeans · Scarpe · Accessori`
+  `Tutto · Maglie · Camicie · Canotte · Felpe e Maglioni · Gilet · Giacche e Cappotti · Pantaloni · Jeans · Scarpe · Accessori`
 - Griglia a 2 colonne di card: immagine scontornata su fondo grigio chiarissimo, nome del capo, categoria in grigio.
 - Ricerca: filtra per nome, colore, tag (client-side).
 - Tap su card → dettaglio capo (bottom sheet): immagine grande, nome, categoria, colore, tag, "Prova nel camerino", "Modifica", "Elimina" (con conferma).
@@ -54,10 +54,10 @@ Google non si può incorporare in iframe e l'API immagini non serve. Flusso:
 ### 2.2 Interazioni
 - **Zone**: `busto` (strati), `gambe`, `piedi`. Tap su una zona del palco la rende attiva (alone leggero).
 - **Swipe orizzontale** sul palco: scorre i capi della zona attiva, filtrati per categorie compatibili:
-  - busto → Maglie, Camicie, Canotte, Felpe e Maglioni, Giacche e Cappotti
+  - busto → Maglie, Camicie, Canotte, Felpe e Maglioni, Gilet, Giacche e Cappotti (Gilet: migrazione 007)
   - gambe → Pantaloni, Jeans
   - piedi → Scarpe
-- Max 3 strati sul busto, in ordine fisso dall'interno: canotta < maglia < camicia < felpa/maglione < giacca/cappotto. Ogni strato propone (swipe e Cerca) solo i capi più esterni di quello sotto e più interni di quello sopra: niente maglia sopra una felpa, niente due felpe. "+ Strato" aggiunge sopra il capo più vicino tra quelli più esterni e compare solo se ce n'è uno. Un capo arrivato da "Prova nel camerino" va nello strato del suo tipo (sostituisce lo stesso tipo, o si inserisce al suo posto). Gli stati salvati vengono rimessi in ordine (uno per tipo).
+- Max 3 strati sul busto, in ordine fisso dall'interno: canotta < maglia < camicia < felpa/maglione < gilet < giacca/cappotto (l'ordine vero è `LAYER_ORDER`, il gilet sta a 3,5; `layer_rank` nel database è un intero e non serve più a ordinare). **Gilet** (senza maniche): con un gilet sopra lo strato sotto non si nasconde fuori dalla sagoma del gilet (le maniche, le spalle, le ascelle si vedono); il gilet lo copre solo dove c'è. Contano ancora l'orlo (Esce sotto / Dentro, Ritocca → Orlo), il colletto e la regola del capo chiuso. Nei prompt di Gemini il gilet è senza maniche e lascia le braccia scoperte; il riconoscimento lo trova come gilet, gilet imbottito o gilet di maglia. Ogni strato propone (swipe e Cerca) solo i capi più esterni di quello sotto e più interni di quello sopra: niente maglia sopra una felpa, niente due felpe. "+ Strato" aggiunge sopra il capo più vicino tra quelli più esterni e compare solo se ce n'è uno. Un capo arrivato da "Prova nel camerino" va nello strato del suo tipo (sostituisce lo stesso tipo, o si inserisce al suo posto). Gli stati salvati vengono rimessi in ordine (uno per tipo).
 - Tap su "Strato N" → rende attivo quello strato; X → rimuove.
 - Pulsante "Mescola" (icona shuffle) → combinazione casuale.
 

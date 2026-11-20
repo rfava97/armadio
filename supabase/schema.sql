@@ -2,7 +2,7 @@
 -- Utente unico, ma tutto è legato a auth.uid() con RLS.
 
 create type garment_category as enum (
-  'maglie', 'camicie', 'canotte', 'felpe_maglioni', 'giacche_cappotti',
+  'maglie', 'camicie', 'canotte', 'felpe_maglioni', 'gilet', 'giacche_cappotti',
   'pantaloni', 'jeans', 'scarpe', 'accessori'
 );
 

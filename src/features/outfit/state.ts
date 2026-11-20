@@ -6,7 +6,7 @@ export const STAGE_ZONES: StageZone[] = ['busto', 'gambe', 'piedi']
 export const ZONE_LABEL: Record<StageZone, string> = { busto: 'Busto', gambe: 'Gambe', piedi: 'Piedi' }
 
 export const ZONE_CATEGORIES: Record<StageZone, Category[]> = {
-  busto: ['maglie', 'camicie', 'canotte', 'felpe_maglioni', 'giacche_cappotti'],
+  busto: ['maglie', 'camicie', 'canotte', 'felpe_maglioni', 'gilet', 'giacche_cappotti'],
   gambe: ['pantaloni', 'jeans'],
   piedi: ['scarpe'],
 }
@@ -15,7 +15,7 @@ export const MAX_LAYERS = 3
 
 /**
  * Ordine degli strati del busto, dall'interno verso l'esterno: canotta, maglia, camicia,
- * felpa/maglione, giacca/cappotto. Ogni strato è più esterno di quello sotto: niente maglia sopra
+ * felpa/maglione, gilet, giacca/cappotto. Ogni strato è più esterno di quello sotto: niente maglia sopra
  * una felpa, niente due felpe una sopra l'altra.
  */
 export const LAYER_ORDER: Partial<Record<Category, number>> = {
@@ -23,6 +23,7 @@ export const LAYER_ORDER: Partial<Record<Category, number>> = {
   maglie: 1,
   camicie: 2,
   felpe_maglioni: 3,
+  gilet: 3.5,
   giacche_cappotti: 4,
 }
 export const layerOrder = (g: Garment | undefined) => (g ? (LAYER_ORDER[g.category] ?? 0) : 0)

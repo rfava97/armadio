@@ -29,11 +29,13 @@ export function useCoverMasks(
   body?: string,
   /** per ogni strato: ritocchi a mano di colletto e orlo */
   retouch: { collar?: string; hem?: string }[] = [],
+  /** per ogni strato: è un gilet (non nasconde le maniche dello strato sotto) */
+  vest: boolean[] = [],
 ): Covers {
   const bits = (a: boolean[]) => a.map((v) => (v ? 1 : 0)).join('')
   // ogni riga: livello, colletto ritoccato, orlo ritoccato (separati da un carattere che non c'è negli URL)
   const rows = urls.map((u, i) => [u, retouch[i]?.collar ?? '', retouch[i]?.hem ?? ''].join('\t'))
-  const key = `${shoulder ?? ''}|${bits(inside)}|${bits(collarIn)}|${body ?? ''}\n${rows.join('\n')}`
+  const key = `${shoulder ?? ''}|${bits(inside)}|${bits(collarIn)}|${body ?? ''}|${bits(vest)}\n${rows.join('\n')}`
   const [covers, setCovers] = useState<{ key: string } & Covers>({ key: '', ...NONE })
   useEffect(() => {
     const [head, ...lines] = key.split('\n')
@@ -42,12 +44,18 @@ export function useCoverMasks(
     const hemOf = (i: number) => lines[i].split('\t')[2] || undefined
     if (list.length < 2) return
     let cancelled = false
-    const [line, flags, collars, bodyUrl] = head.split('|')
+    const [line, flags, collars, bodyUrl, vests = ''] = head.split('|')
     const top = line ? Number(line) : undefined
     Promise.all([
       Promise.all(
         list.map(async (u, i) => {
-          const c = await coverMask(list.slice(i + 1), flags[i] === '1', u, hemOf(i))
+          const c = await coverMask(
+            list.slice(i + 1),
+            flags[i] === '1',
+            u,
+            hemOf(i),
+            list.slice(i + 1).map((_, j) => vests[i + 1 + j] === '1'),
+          )
           if (!c) return undefined
           const url = c.toDataURL('image/png')
           releaseCanvas(c)

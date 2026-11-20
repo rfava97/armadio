@@ -11,6 +11,7 @@ export const KIND: Record<string, string> = {
   camicie: 'shirt',
   canotte: 'tank top',
   felpe_maglioni: 'sweatshirt / sweater',
+  gilet: 'sleeveless vest / gilet',
   giacche_cappotti: 'jacket / coat',
   pantaloni: 'trousers',
   jeans: 'jeans',

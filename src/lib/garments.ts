@@ -3,6 +3,7 @@ export const CATEGORIES = [
   'camicie',
   'canotte',
   'felpe_maglioni',
+  'gilet',
   'giacche_cappotti',
   'pantaloni',
   'jeans',
@@ -19,6 +20,7 @@ export const CATEGORY_LABEL: Record<Category, string> = {
   camicie: 'Camicie',
   canotte: 'Canotte',
   felpe_maglioni: 'Felpe e Maglioni',
+  gilet: 'Gilet',
   giacche_cappotti: 'Giacche e Cappotti',
   pantaloni: 'Pantaloni',
   jeans: 'Jeans',
@@ -32,6 +34,7 @@ export const CATEGORY_SINGULAR: Record<Category, string> = {
   camicie: 'Camicia',
   canotte: 'Canotta',
   felpe_maglioni: 'Felpa / Maglione',
+  gilet: 'Gilet',
   giacche_cappotti: 'Giacca / Cappotto',
   pantaloni: 'Pantaloni',
   jeans: 'Jeans',
@@ -44,6 +47,7 @@ export const CATEGORY_ZONE: Record<Category, Zone> = {
   camicie: 'busto',
   canotte: 'busto',
   felpe_maglioni: 'busto',
+  gilet: 'busto',
   giacche_cappotti: 'busto',
   pantaloni: 'gambe',
   jeans: 'gambe',
@@ -51,12 +55,14 @@ export const CATEGORY_ZONE: Record<Category, Zone> = {
   accessori: 'accessorio',
 }
 
-/** Ordine z di default nel busto: canotta/maglia < camicia < felpa < giacca (SPEC 2.2). */
+/** Ordine z di default nel busto: canotta/maglia < camicia < felpa < gilet < giacca (SPEC 2.2). Il gilet ha lo
+ * stesso numero della giacca (nel database è un intero): l'ordine vero degli strati è LAYER_ORDER. */
 export const CATEGORY_LAYER_RANK: Record<Category, number> = {
   canotte: 1,
   maglie: 1,
   camicie: 2,
   felpe_maglioni: 3,
+  gilet: 4,
   giacche_cappotti: 4,
   pantaloni: 1,
   jeans: 1,
