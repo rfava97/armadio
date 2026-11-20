@@ -27,12 +27,19 @@ export function useCoverMasks(
   inside: boolean[] = [],
   collarIn: boolean[] = [],
   body?: string,
+  /** per ogni strato: ritocchi a mano di colletto e orlo */
+  retouch: { collar?: string; hem?: string }[] = [],
 ): Covers {
   const bits = (a: boolean[]) => a.map((v) => (v ? 1 : 0)).join('')
-  const key = `${shoulder ?? ''}|${bits(inside)}|${bits(collarIn)}|${body ?? ''}\n${urls.join('\n')}`
+  // ogni riga: livello, colletto ritoccato, orlo ritoccato (separati da un carattere che non c'è negli URL)
+  const rows = urls.map((u, i) => [u, retouch[i]?.collar ?? '', retouch[i]?.hem ?? ''].join('\t'))
+  const key = `${shoulder ?? ''}|${bits(inside)}|${bits(collarIn)}|${body ?? ''}\n${rows.join('\n')}`
   const [covers, setCovers] = useState<{ key: string } & Covers>({ key: '', ...NONE })
   useEffect(() => {
-    const [head, ...list] = key.split('\n')
+    const [head, ...lines] = key.split('\n')
+    const list = lines.map((l) => l.split('\t')[0])
+    const collarOf = (i: number) => lines[i].split('\t')[1] || undefined
+    const hemOf = (i: number) => lines[i].split('\t')[2] || undefined
     if (list.length < 2) return
     let cancelled = false
     const [line, flags, collars, bodyUrl] = head.split('|')
@@ -40,7 +47,7 @@ export function useCoverMasks(
     Promise.all([
       Promise.all(
         list.map(async (u, i) => {
-          const c = await coverMask(list.slice(i + 1), flags[i] === '1', u)
+          const c = await coverMask(list.slice(i + 1), flags[i] === '1', u, hemOf(i))
           if (!c) return undefined
           const url = c.toDataURL('image/png')
           releaseCanvas(c)
@@ -50,7 +57,7 @@ export function useCoverMasks(
       Promise.all(
         list.map(async (u, i) => {
           if (top === undefined || i !== list.length - 2 || collars[i] === '1') return undefined
-          const c = await hoodMask(u, top, list.slice(i + 1))
+          const c = await hoodMask(u, top, list.slice(i + 1), 1200, collarOf(i))
           if (!c) return undefined
           const url = c.toDataURL('image/png')
           releaseCanvas(c)
@@ -60,14 +67,14 @@ export function useCoverMasks(
       Promise.all(
         list.map(async (u, i) => {
           if (top === undefined || !bodyUrl || i !== list.length - 2 || collars[i] === '1') return undefined
-          const c = await collarHole(bodyUrl, u, top, list.slice(i + 1))
+          const c = await collarHole(bodyUrl, u, top, list.slice(i + 1), 1200, collarOf(i))
           if (!c) return undefined
           const url = c.toDataURL('image/png')
           releaseCanvas(c)
           return url
         }),
       ),
-      Promise.all(list.map((u, i) => (top === undefined || i !== list.length - 2 ? null : hoodKind(u, top)))),
+      Promise.all(list.map((u, i) => (top === undefined || i !== list.length - 2 ? null : hoodKind(u, top, collarOf(i))))),
     ])
       .then(([masks, hoods, holes, kinds]) => !cancelled && setCovers({ key, masks, hoods, holes, kinds }))
       .catch((e) => console.error(e))

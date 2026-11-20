@@ -218,6 +218,8 @@ export async function composeOnMe(
   inside: boolean[] = [],
   /** per ogni strato del busto: colletto o cappuccio lasciato sotto i capi sopra (non tirato fuori) */
   collarIn: boolean[] = [],
+  /** per ogni strato del busto: ritocchi a mano di colletto e orlo */
+  retouch: { collar?: string; hem?: string }[] = [],
 ): Promise<Blob> {
   const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
   const body = await load(bodyUrl)
@@ -234,7 +236,7 @@ export async function composeOnMe(
   for (const [n, u] of layerUrls.entries()) {
     const l = await load(u)
     const k = n - topsFrom
-    const cover = k >= 0 ? await coverMask(tops.slice(k + 1), !!inside[k], tops[k]) : null
+    const cover = k >= 0 ? await coverMask(tops.slice(k + 1), !!inside[k], tops[k], retouch[k]?.hem) : null
     if (cover) {
       // lo strato coperto, ritagliato dove esce dai capi sopra
       const t = makeCanvas(l.width, l.height)
@@ -255,12 +257,12 @@ export async function composeOnMe(
     // solo lo strato subito sotto il più esterno: con un capo in mezzo il colletto resta sotto
     for (const [k, u] of tops.slice(0, -1).entries()) {
       if (collarIn[k] || k !== tops.length - 2) continue
-      const hole = await collarHole(bodyUrl, u, line, tops.slice(k + 1))
+      const hole = await collarHole(bodyUrl, u, line, tops.slice(k + 1), 1200, retouch[k]?.collar)
       if (hole) {
         ctx.drawImage(hole, -pad, -pad, w + pad * 2, h + pad * 2)
         releaseCanvas(hole)
       }
-      const hood = await hoodMask(u, line, tops.slice(k + 1))
+      const hood = await hoodMask(u, line, tops.slice(k + 1), 1200, retouch[k]?.collar)
       if (!hood) continue
       const l = await load(u)
       const t = makeCanvas(l.width, l.height)
@@ -960,8 +962,19 @@ const HOOD_OVERLAP = 0.04
  * invece di tagliarli con una riga.
  */
 /** cosa spunta dallo strato sopra i capi esterni: cappuccio, collo alto o niente */
-export async function hoodKind(url: string, shoulder: number): Promise<'hood' | 'collar' | null> {
-  return (await shapeOf(url, shoulder))?.kind ?? null
+export async function hoodKind(url: string, shoulder: number, custom?: string): Promise<'hood' | 'collar' | null> {
+  const kind = (await shapeOf(url, shoulder))?.kind ?? null
+  // colletto ritoccato a mano: c'è anche se non si riconosce da solo
+  return custom ? (kind ?? 'collar') : kind
+}
+
+/** Ritocco a mano (immagine con trasparenza, nel fotogramma del livello) portato a `w`×`h`. */
+async function retouchCanvas(url: string, w: number, h: number) {
+  const b = await bitmapOf(url)
+  const c = makeCanvas(w, h)
+  ctx2d(c).drawImage(b, 0, 0, w, h)
+  b.close()
+  return c
 }
 
 function shapeOf(url: string, shoulder: number): Promise<HoodShape | null> {
@@ -975,7 +988,19 @@ function shapeOf(url: string, shoulder: number): Promise<HoodShape | null> {
   return p
 }
 
-export async function hoodMask(url: string, shoulder: number, above: string[] = [], size = 1200): Promise<HTMLCanvasElement | null> {
+export async function hoodMask(
+  url: string,
+  shoulder: number,
+  above: string[] = [],
+  size = 1200,
+  /** colletto ritoccato a mano: si usa lui al posto di quello trovato */
+  custom?: string,
+): Promise<HTMLCanvasElement | null> {
+  if (custom) {
+    const { mask } = await layerExtent(url)
+    const k = size / Math.max(mask.width, mask.height)
+    return retouchCanvas(custom, Math.round(mask.width * k), Math.round(mask.height * k))
+  }
   const shape = await shapeOf(url, shoulder)
   if (!shape) return null
   const { W, H, top, x0, bottom, kind, endRow, neck, piped } = shape
@@ -1110,7 +1135,16 @@ export async function hoodMask(url: string, shoulder: number, above: string[] = 
  * fotogramma dei livelli: si disegna sopra i capi esterni, sotto il colletto. Solo per un colletto senza
  * bordino a contrasto. null se non serve.
  */
-export async function collarHole(bodyUrl: string, url: string, shoulder: number, above: string[], size = 1200): Promise<HTMLCanvasElement | null> {
+export async function collarHole(
+  bodyUrl: string,
+  url: string,
+  shoulder: number,
+  above: string[],
+  size = 1200,
+  /** colletto ritoccato a mano: niente toppa, vale quello che hai colorato */
+  custom?: string,
+): Promise<HTMLCanvasElement | null> {
+  if (custom) return null
   // solo un colletto senza bordino a contrasto (polo, camicia): con le punte del bavero (una felpa
   // con la zip) tra le punte c'è il colletto dei capi sopra, che resta
   const shape = await shapeOf(url, shoulder)
@@ -1149,7 +1183,13 @@ export async function collarHole(bodyUrl: string, url: string, shoulder: number,
  * inside: lo strato è tenuto dentro i capi sopra e non esce sotto il loro orlo (per colonne, l'orlo
  * più basso tra i capi sopra; ganci e lacci stretti non contano).
  */
-export async function coverMask(above: string[], inside = false, self?: string): Promise<HTMLCanvasElement | null> {
+export async function coverMask(
+  above: string[],
+  inside = false,
+  self?: string,
+  /** orlo ritoccato a mano: le parti colorate si nascondono (solo quando ci sono capi sopra) */
+  hemRetouch?: string,
+): Promise<HTMLCanvasElement | null> {
   if (!above.length) return null
   const extents = await Promise.all(above.map(layerExtent))
   const masks = extents.map((e) => e.mask)
@@ -1204,6 +1244,13 @@ export async function coverMask(above: string[], inside = false, self?: string):
     for (let x = 0; x < W; x++) kctx.fillRect(x, 0, 1, limit[x])
     ctx.drawImage(keep, 0, 0)
     releaseCanvas(keep)
+  }
+  if (hemRetouch) {
+    const h = await retouchCanvas(hemRetouch, W, H)
+    ctx.globalCompositeOperation = 'destination-out'
+    ctx.drawImage(h, 0, 0)
+    ctx.globalCompositeOperation = 'source-over'
+    releaseCanvas(h)
   }
   return c
 }

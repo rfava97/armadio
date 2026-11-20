@@ -103,6 +103,64 @@ export function useOnMeLayers(wears: WearsByGarment | undefined, bodyPath: strin
   })
 }
 
+/* ---------- ritocchi a mano di un livello (colletto e orlo) ---------- */
+
+/**
+ * I ritocchi stanno accanto al livello, con lo stesso nome: <livello>.colletto.png (dove il colletto
+ * esce sopra i capi sopra) e <livello>.orlo.png (cosa nascondere quando ci sono capi sopra). Un livello
+ * nuovo (Rifai, Regola, Importa) ha un altro nome: i ritocchi vecchi non valgono più e si cancellano.
+ */
+export type RetouchKind = 'collar' | 'hem'
+export const retouchPath = (layerPath: string, kind: RetouchKind) =>
+  `${layerPath.replace(/\.[a-z0-9]+$/i, '')}.${kind === 'collar' ? 'colletto' : 'orlo'}.png`
+const retouchFiles = (layerPath: string) => [retouchPath(layerPath, 'collar'), retouchPath(layerPath, 'hem')]
+
+export type Retouch = { collar?: string; hem?: string }
+
+/** URL firmati dei ritocchi dei livelli pronti, per id del modo (solo quelli che esistono). */
+export function useRetouches(wears: WearsByGarment | undefined, bodyPath: string | null | undefined) {
+  const ready = [...(wears?.values() ?? [])].flat().filter((w) => isWearReady(w, bodyPath))
+  const paths = ready.flatMap((w) => retouchFiles(w.on_me_path!)).sort()
+  return useQuery({
+    queryKey: ['retouch', paths],
+    enabled: paths.length > 0,
+    staleTime: 50 * 60 * 1000,
+    queryFn: async () => {
+      const { data, error } = await supabase.storage.from(BUCKET).createSignedUrls(paths, SIGNED_TTL)
+      if (error) throw error
+      // i file che non esistono tornano con un errore: niente ritocco
+      const byPath = new Map<string, string>()
+      for (const s of data) if (!s.error && s.path && s.signedUrl) byPath.set(s.path, s.signedUrl)
+      const out = new Map<string, Retouch>()
+      for (const w of ready) {
+        const collar = byPath.get(retouchPath(w.on_me_path!, 'collar'))
+        const hem = byPath.get(retouchPath(w.on_me_path!, 'hem'))
+        if (collar || hem) out.set(w.id, { collar, hem })
+      }
+      return out
+    },
+  })
+}
+
+/** Salva (o toglie, con blob null) un ritocco del livello di un modo. */
+export function useSaveRetouch() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ wear, kind, blob }: { wear: Wear; kind: RetouchKind; blob: Blob | null }) => {
+      if (!wear.on_me_path) throw new Error('Il capo non è ancora pronto su di te.')
+      const path = retouchPath(wear.on_me_path, kind)
+      const store = supabase.storage.from(BUCKET)
+      // niente sovrascrittura (le regole del bucket permettono di creare e cancellare): si toglie e si rimette
+      await store.remove([path])
+      if (blob) {
+        const up = await store.upload(path, blob, { contentType: 'image/png', upsert: false })
+        if (up.error) throw up.error
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['retouch'] }),
+  })
+}
+
 function friendly(e: unknown): Error {
   // gli errori di Supabase sono oggetti con message, non sempre istanze di Error
   const msg = (e as { message?: string } | null)?.message ?? String(e)
@@ -142,7 +200,7 @@ async function storeLayer(g: Garment, w: Wear, layer: HTMLCanvasElement, bodyPat
     await store.remove([path])
     throw friendly(error)
   }
-  if (w.on_me_path) await store.remove([w.on_me_path])
+  if (w.on_me_path) await store.remove([w.on_me_path, ...retouchFiles(w.on_me_path)])
 }
 
 /** Genera e salva il livello "su di me" di un modo con FASHN (sostituisce quello vecchio). */
@@ -272,7 +330,7 @@ export function useDeleteWear() {
       const { error } = await supabase.from('garment_wears').delete().eq('id', w.id)
       if (error) throw friendly(error)
       if (w.fit_photo_path) await supabase.storage.from('garments').remove([w.fit_photo_path])
-      if (w.on_me_path) await supabase.storage.from(BUCKET).remove([w.on_me_path])
+      if (w.on_me_path) await supabase.storage.from(BUCKET).remove([w.on_me_path, ...retouchFiles(w.on_me_path)])
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['wears'] }),
   })
@@ -317,7 +375,7 @@ export async function removeWearFiles(garmentId: string) {
   const fits = rows.map((r) => r.fit_photo_path).filter((p): p is string => !!p)
   const layers = rows.map((r) => r.on_me_path).filter((p): p is string => !!p)
   if (fits.length) await supabase.storage.from('garments').remove(fits)
-  if (layers.length) await supabase.storage.from(BUCKET).remove(layers)
+  if (layers.length) await supabase.storage.from(BUCKET).remove([...layers, ...layers.flatMap(retouchFiles)])
 }
 
 /**

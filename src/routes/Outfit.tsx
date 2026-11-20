@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowDownToLine, ArrowUpToLine, Heart, Plus, RotateCcw, Search, Shuffle, SlidersHorizontal, Sparkles, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUpToLine, Brush, Heart, Plus, RotateCcw, Search, Shuffle, SlidersHorizontal, Sparkles, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/Spinner'
 import { useToast } from '@/components/toast'
@@ -25,14 +25,18 @@ import {
   useOnMeLayers,
   useOnMeQueue,
   useOnMeStarter,
+  useRetouches,
+  useSaveRetouch,
   useWears,
   type OnMeTarget,
+  type Retouch,
   type Wear,
 } from '@/features/onme/api'
 import { SaveOnMeSheet } from '@/features/onme/SaveOnMeSheet'
 import { AdjustPanel } from '@/features/onme/AdjustPanel'
+import { RetouchSheet } from '@/features/onme/RetouchSheet'
 import { useAdjustPreview } from '@/features/onme/useAdjustPreview'
-import { FALLBACK_GUIDE, layerGuide, NO_ADJUST, type AdjustGuide, type LayerAdjust } from '@/lib/onMe'
+import { FALLBACK_GUIDE, layerGuide, layerRow, NO_ADJUST, type AdjustGuide, type LayerAdjust } from '@/lib/onMe'
 import {
   addLayer,
   canAddLayer,
@@ -68,11 +72,14 @@ export default function Outfit() {
   const body = usePreparedBody(photo.data)
   const { data: wearsMap } = useWears()
   const layers = useOnMeLayers(wearsMap, bodyPath)
+  const retouches = useRetouches(wearsMap, bodyPath)
   const [state, setState] = useState<CamerinoState | null>(null)
   const [picking, setPicking] = useState(false)
   const [trying, setTrying] = useState(false)
   const [saving, setSaving] = useState(false)
   const [collars, setCollars] = useState<Map<string, 'hood' | 'collar'>>(() => new Map())
+  const [retouching, setRetouching] = useState(false)
+  const saveRetouch = useSaveRetouch()
   // correzione a mano del capo attivo "su di me": per modo, con il punto fisso letto dal livello
   const [adjusting, setAdjusting] = useState<{ wearId: string; guide: AdjustGuide | null; value: LayerAdjust } | null>(null)
   const adjustMut = useAdjustLayer()
@@ -143,6 +150,13 @@ export default function Outfit() {
     return { id: g.id, url: w && isWearReady(w, bodyPath) ? layers.data?.get(w.id) : undefined, fit: w?.fit_photo_path ?? undefined }
   })
   const garmentLayers = new Map(wornWears.filter((x) => x.url).map((x) => [x.id, x.url!] as const))
+  // ritocchi a mano (colletto, orlo) dei livelli in uso, per capo
+  const garmentRetouch = new Map<string, Retouch>()
+  for (const g of worn) {
+    const w = wearOf(g)
+    const r = w && garmentLayers.has(g.id) ? retouches.data?.get(w.id) : undefined
+    if (r) garmentRetouch.set(g.id, r)
+  }
   const fitPhotos = new Map(wornWears.filter((x) => x.fit).map((x) => [x.id, x.fit!] as const))
   const anchors = profile?.body_anchors
   const onMe: OnMeSource | null =
@@ -152,6 +166,7 @@ export default function Outfit() {
           aspect: body.aspect,
           split: anchors ? [(anchors.waist.y + anchors.hips.y) / 2, (anchors.ankle_l.y + anchors.ankle_r.y) / 2 - 0.025] : [0.47, 0.92],
           layers: garmentLayers,
+          retouch: garmentRetouch,
           shoulderY: anchors ? (anchors.shoulder_l.y + anchors.shoulder_r.y) / 2 : undefined,
         }
       : null
@@ -180,6 +195,20 @@ export default function Outfit() {
     .map((x) => x.g)
 
   const activeLayerUrl = activeWear && isWearReady(activeWear, bodyPath) ? layers.data?.get(activeWear.id) : undefined
+  // per il ritocco: i livelli dei capi sopra il capo attivo (dal più interno)
+  const activeAbove = activeGarment ? savedTops.slice(savedTops.indexOf(activeGarment) + 1).map((g) => garmentLayers.get(g.id)!) : []
+  const saveRetouches = async (changes: Partial<Record<'collar' | 'hem', Blob | null>>) => {
+    if (!activeWear) return
+    try {
+      for (const [kind, blob] of Object.entries(changes) as ['collar' | 'hem', Blob | null][]) {
+        await saveRetouch.mutateAsync({ wear: activeWear, kind, blob })
+      }
+      setRetouching(false)
+      toast('Ritocco salvato')
+    } catch (e) {
+      console.error(e)
+    }
+  }
   // la correzione vale solo finché resta attivo lo stesso modo (cambiando capo o vista si chiude)
   const adjust = view === 'sudime' && adjusting && adjusting.wearId === activeWear?.id && activeLayerUrl ? adjusting : null
   const startAdjust = () => {
@@ -403,6 +432,19 @@ export default function Outfit() {
               {/* sotto, gli interruttori: vanno a capo se non ci stanno */}
               {(collarKind || covered) && (
                 <div className="flex flex-wrap justify-end gap-2">
+                  {covered && activeLayerUrl && !queue.running && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        saveRetouch.reset()
+                        setRetouching(true)
+                      }}
+                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold"
+                    >
+                      <Brush className="size-4 text-accent" aria-hidden />
+                      Ritocca
+                    </button>
+                  )}
                   {collarKind && (
                     <button
                       type="button"
@@ -455,6 +497,21 @@ export default function Outfit() {
             />
           )}
 
+          {retouching && covered && activeGarment && activeWear && activeLayerUrl && onMe && (
+            <RetouchSheet
+              open
+              onClose={() => setRetouching(false)}
+              name={activeWear.name !== 'Base' ? `${activeGarment.name} (${activeWear.name.toLowerCase()})` : activeGarment.name}
+              layerUrl={activeLayerUrl}
+              above={activeAbove}
+              shoulder={onMe.shoulderY !== undefined ? layerRow(onMe.shoulderY, onMe.aspect) : 0.25}
+              current={retouches.data?.get(activeWear.id)}
+              onSave={saveRetouches}
+              saving={saveRetouch.isPending}
+              error={saveRetouch.error ? friendlyError(saveRetouch.error) : null}
+            />
+          )}
+
           {saving && onMe && (
             <SaveOnMeSheet
               open
@@ -467,6 +524,7 @@ export default function Outfit() {
               ]}
               inside={savedTops.map((g) => !!state.outfit.inside?.includes(g.id))}
               collarIn={savedTops.map((g) => !!state.outfit.collarIn?.includes(g.id))}
+              retouch={savedTops.map((g) => garmentRetouch.get(g.id) ?? {})}
               topsFrom={
                 (state.outfit.piedi && garmentLayers.get(state.outfit.piedi) ? 1 : 0) +
                 (state.outfit.gambe && garmentLayers.get(state.outfit.gambe) ? 1 : 0)

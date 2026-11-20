@@ -20,6 +20,8 @@ export type OnMeSource = {
   layers: Map<string, string>
   /** riga delle spalle sulla foto (frazione), per i cappucci degli strati sotto */
   shoulderY?: number
+  /** id del capo → ritocchi a mano di colletto e orlo del suo livello */
+  retouch?: Map<string, { collar?: string; hem?: string }>
 }
 
 type Props = {
@@ -248,6 +250,7 @@ export function Stage({ garments, state, onMe, onSelectZone, onStep, adjustCanva
     tops.map((t) => (state.outfit.inside ?? []).includes(t.id)),
     tops.map((t) => (state.outfit.collarIn ?? []).includes(t.id)),
     onMe?.url,
+    tops.map((t) => onMe?.retouch?.get(t.id) ?? {}),
   )
   const collarKey = tops.flatMap((t, i) => (covers.kinds[i] ? [`${t.id}:${covers.kinds[i]}`] : [])).join(',')
   useEffect(() => {

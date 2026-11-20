@@ -15,6 +15,7 @@ export function SaveOnMeSheet({
   shoulderY,
   inside,
   collarIn,
+  retouch,
   state,
 }: {
   open: boolean
@@ -30,18 +31,20 @@ export function SaveOnMeSheet({
   inside: boolean[]
   /** per ogni strato del busto: colletto o cappuccio lasciato sotto i capi sopra */
   collarIn: boolean[]
+  /** per ogni strato del busto: ritocchi a mano di colletto e orlo */
+  retouch: { collar?: string; hem?: string }[]
   state: CamerinoState
 }) {
   const [image, setImage] = useState<{ blob: Blob; url: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const key = JSON.stringify(layers)
-  const insideKey = JSON.stringify([inside, collarIn])
+  const insideKey = JSON.stringify([inside, collarIn, retouch])
 
   useEffect(() => {
     let cancelled = false
     let url: string | null = null
-    const [ins, col] = JSON.parse(insideKey) as [boolean[], boolean[]]
-    composeOnMe(bodyUrl, JSON.parse(key) as string[], topsFrom, shoulderY, ins, col)
+    const [ins, col, ret] = JSON.parse(insideKey) as [boolean[], boolean[], { collar?: string; hem?: string }[]]
+    composeOnMe(bodyUrl, JSON.parse(key) as string[], topsFrom, shoulderY, ins, col, ret)
       .then((blob) => {
         if (cancelled) return
         url = URL.createObjectURL(blob)
