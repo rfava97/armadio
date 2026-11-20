@@ -375,54 +375,57 @@ export default function Outfit() {
 
           {/* modi di indossare il capo attivo (es. felpa chiusa / aperta) e, se ha capi sopra, se esce sotto */}
           {activeGarment && (activeWears.length > 1 || covered) && (
-            <div className="mt-2 flex items-center gap-2 overflow-x-auto [scrollbar-width:none]">
+            <div className="mt-2 flex flex-col gap-2">
+              {/* i modi su una riga (scorre se sono tanti), sotto l'avviso se il capo sopra è chiuso */}
               {activeWears.length > 1 && (
-                <div className="flex gap-2" role="radiogroup" aria-label={`Come indossi ${activeGarment.name}`}>
-                  {activeWears.map((w) => (
-                    <button
-                      key={w.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={activeWear?.id === w.id}
-                      disabled={forcedClosed.has(activeGarment.id) && activeWear?.id !== w.id}
-                      onClick={() => update((s) => setWear(s, activeGarment.id, w.id))}
-                      className={cn(
-                        'h-8 shrink-0 rounded-full px-3 text-caption font-semibold transition-colors disabled:opacity-40',
-                        activeWear?.id === w.id ? 'bg-navy text-on-accent' : 'bg-surface-muted text-fg',
-                      )}
-                    >
-                      {w.name}
-                    </button>
-                  ))}
+                <div className="flex min-w-0 items-center gap-2 overflow-x-auto [scrollbar-width:none]">
+                  <div className="flex shrink-0 gap-2" role="radiogroup" aria-label={`Come indossi ${activeGarment.name}`}>
+                    {activeWears.map((w) => (
+                      <button
+                        key={w.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={activeWear?.id === w.id}
+                        disabled={forcedClosed.has(activeGarment.id) && activeWear?.id !== w.id}
+                        onClick={() => update((s) => setWear(s, activeGarment.id, w.id))}
+                        className={cn(
+                          'h-8 shrink-0 rounded-full px-3 text-caption font-semibold transition-colors disabled:opacity-40',
+                          activeWear?.id === w.id ? 'bg-navy text-on-accent' : 'bg-surface-muted text-fg',
+                        )}
+                      >
+                        {w.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
-              {forcedClosed.has(activeGarment.id) && (
-                <p className="shrink-0 text-caption text-fg-muted">Il capo sopra è chiuso</p>
-              )}
-              {collarKind && (
-                <button
-                  type="button"
-                  aria-pressed={!collarIn}
-                  onClick={() => update((s) => setCollarIn(s, activeGarment.id, !collarIn))}
-                  className="ml-auto flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold"
-                >
-                  {collarIn ? <ArrowDownToLine className="size-4 text-accent" aria-hidden /> : <ArrowUpToLine className="size-4 text-accent" aria-hidden />}
-                  {collarKind === 'hood' ? (collarIn ? 'Cappuccio dentro' : 'Cappuccio fuori') : collarIn ? 'Colletto dentro' : 'Colletto fuori'}
-                </button>
-              )}
-              {covered && (
-                <button
-                  type="button"
-                  aria-pressed={inside}
-                  onClick={() => update((s) => setInside(s, activeGarment.id, !inside))}
-                  className={cn(
-                    'flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold',
-                    !collarKind && 'ml-auto',
+              {forcedClosed.has(activeGarment.id) && <p className="text-caption text-fg-muted">Il capo sopra è chiuso</p>}
+              {/* sotto, gli interruttori: vanno a capo se non ci stanno */}
+              {(collarKind || covered) && (
+                <div className="flex flex-wrap justify-end gap-2">
+                  {collarKind && (
+                    <button
+                      type="button"
+                      aria-pressed={!collarIn}
+                      onClick={() => update((s) => setCollarIn(s, activeGarment.id, !collarIn))}
+                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold"
+                    >
+                      {collarIn ? <ArrowDownToLine className="size-4 text-accent" aria-hidden /> : <ArrowUpToLine className="size-4 text-accent" aria-hidden />}
+                      {collarKind === 'hood' ? (collarIn ? 'Cappuccio dentro' : 'Cappuccio fuori') : collarIn ? 'Colletto dentro' : 'Colletto fuori'}
+                    </button>
                   )}
-                >
-                  {inside ? <ArrowUpToLine className="size-4 text-accent" aria-hidden /> : <ArrowDownToLine className="size-4 text-accent" aria-hidden />}
-                  {inside ? 'Dentro' : 'Esce sotto'}
-                </button>
+                  {covered && (
+                    <button
+                      type="button"
+                      aria-pressed={inside}
+                      onClick={() => update((s) => setInside(s, activeGarment.id, !inside))}
+                      className="flex h-8 shrink-0 items-center gap-1.5 rounded-full border border-border bg-surface px-3 text-caption font-semibold"
+                    >
+                      {inside ? <ArrowUpToLine className="size-4 text-accent" aria-hidden /> : <ArrowDownToLine className="size-4 text-accent" aria-hidden />}
+                      {inside ? 'Dentro' : 'Esce sotto'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
