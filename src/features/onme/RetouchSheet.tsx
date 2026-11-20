@@ -35,13 +35,14 @@ const TINT: Record<RetouchKind, string> = { collar: '#16a34a', hem: '#dc2626' }
 
 const load = async (u: string) => createImageBitmap(await (await fetch(u)).blob())
 
-/** riga più bassa con il capo, nelle colonne centrali (per inquadrare l'orlo dei capi sopra) */
+/** riga più bassa con il capo attorno al centro (per inquadrare l'orlo dei capi sopra) */
 function hemRow(img: ImageBitmap) {
   const c = makeCanvas(img.width, img.height)
   const ctx = ctx2d(c)
   ctx.drawImage(img, 0, 0)
-  const x0 = Math.round(img.width * 0.4)
-  const w = Math.round(img.width * 0.2)
+  // una fascia larga: con un capo aperto davanti al centro non c'è niente, l'orlo è sui lembi
+  const x0 = Math.round(img.width * 0.28)
+  const w = Math.round(img.width * 0.44)
   const d = ctx.getImageData(x0, 0, w, img.height).data
   releaseCanvas(c)
   for (let y = img.height - 1; y >= 0; y--) for (let x = 0; x < w; x++) if (d[(y * w + x) * 4 + 3] > 128) return y

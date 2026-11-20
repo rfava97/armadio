@@ -1227,14 +1227,28 @@ export async function coverMask(
       // solo il busto: le maniche corte finiscono molto più su dell'orlo e non contano
       if (bot[x] >= hem[x] - 0.05 * H) out.push(Math.max(0, bot[x] - l))
     }
-    // la fascia che esce sotto l'orlo è tutta o niente: se lungo l'orlo esce (mediana) meno del 2,5%
-    // dell'altezza è un difetto della generazione (una striscia, o pezzi qua e là) e si nasconde tutta;
-    // altrimenti si vede intera (via solo i pezzetti di un filo, meno dell'1%)
+    // il capo subito sopra è aperto davanti (camicia o giacca aperta): al centro manca, o c'è solo il
+    // colletto (una T-shirt sotto una felpa chiusa sotto un montone aperto è coperta dalla felpa)
+    const outer = extents[0]
+    const ko = outer.colBottom.length / W
+    let gaps = 0
+    let cols = 0
+    for (let x = Math.round(0.47 * W); x <= Math.round(0.53 * W); x++) {
+      const v = outer.colBottom[Math.min(outer.colBottom.length - 1, Math.floor(x * ko))]
+      cols++
+      if (v < 0 || (hem[x] >= 0 && v / ko < hem[x] - 0.15 * H)) gaps++
+    }
+    const openFront = gaps > cols / 2
+    // la fascia che esce sotto l'orlo è tutta o niente: sotto un capo chiuso, se lungo l'orlo esce
+    // (mediana) meno del 2,5% dell'altezza è un difetto della generazione (una striscia, o pezzi qua e
+    // là) e si nasconde tutta; sotto un capo aperto davanti lo strato si vede già nell'apertura e la sua
+    // fascia sotto l'orlo è normale anche corta (basta lo 0,8%). Altrimenti si vede intera (via solo i
+    // pezzetti di un filo, meno dell'1%).
     out.sort((a, b) => a - b)
-    const band = out.length > 0 && out[out.length >> 1] >= 0.025 * H
+    const band = out.length > 0 && out[out.length >> 1] >= (openFront ? 0.008 : 0.025) * H
     for (let x = 0; x < W; x++) {
       if (low[x] < 0 || bot[x] <= hem[x]) continue
-      if (!band || bot[x] - low[x] < 0.01 * H) limit[x] = low[x] + 1
+      if (!band || bot[x] - low[x] < (openFront ? 0.005 : 0.01) * H) limit[x] = low[x] + 1
     }
   }
   if (inside || self) {
